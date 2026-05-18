@@ -16,7 +16,7 @@ jobs:
         run: |
           wget -q https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
           tar xf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-          echo "TOOLCHAIN_PATH=$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_ENV
+          echo "TOOLCHAIN_PATH=$PWD/arm-gnu-chain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_ENV
           echo "$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_PATH
 
       - name: Clone KernelPatch SDK
@@ -25,35 +25,29 @@ jobs:
 
       - name: Build selinux-context-hide
         run: |
-          export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
-          aarch64-none-elf-gcc \
-            -I kpatch/kernel/patch/include \
-            -nostdlib \
-            -fno-builtin \
-            -ffreestanding \
-            -fno-stack-protector \
-            -fpic \
-            -Wall \
-            -Wno-implicit-function-declaration \
-            -o out/selinux_context_hide.kpm \
-            src/selinux_context_hide.c
+          # 1. Compilar el archivo objeto intermedio .o
+          aarch64-none-linux-gnu-gcc \
+            -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o selinux_context_hide.o src/selinux_context_hide.c
+          
+          # 2. Enlazar como objeto reubicable con la bandera -r para el gestor de KPM
+          aarch64-none-linux-gnu-gcc -r -o out/selinux_context_hide.kpm selinux_context_hide.o
+          rm selinux_context_hide.o
 
       - name: Build selinux-execmem-hide
         run: |
-          export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
-          aarch64-none-elf-gcc \
-            -I kpatch/kernel/patch/include \
-            -nostdlib \
-            -fno-builtin \
-            -ffreestanding \
-            -fno-stack-protector \
-            -fpic \
-            -Wall \
-            -Wno-implicit-function-declaration \
-            -o out/selinux_execmem_hide.kpm \
-            src/selinux_execmem_hide.c
+          # 1. Compilar el archivo objeto intermedio .o
+          aarch64-none-linux-gnu-gcc \
+            -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o selinux_execmem_hide.o src/selinux_execmem_hide.c
+          
+          # 2. Enlazar como objeto reubicable con la bandera -r para el gestor de KPM
+          aarch64-none-linux-gnu-gcc -r -o out/selinux_execmem_hide.kpm selinux_execmem_hide.o
+          rm selinux_execmem_hide.o
 
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
