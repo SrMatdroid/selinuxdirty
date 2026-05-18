@@ -12,12 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Instalación oficial del toolchain de AArch64
-      - name: Install ARM GNU Toolchain
-        uses: gcc-arm-embedded/program-action@v1
-        with:
-          platform: 'aarch64-none-linux-gnu'
+      # Descarga e instalación manual robusta del Toolchain oficial de ARM
+      - name: Install ARM GNU Toolchain 12.2
+        run: |
+          mkdir -p toolchain
+          curl -L "https://arm.com" -o toolchain.tar.xz
+          tar -xf toolchain.tar.xz -C toolchain --strip-components=1
+          echo "/home/runner/work/selinuxdirty/selinuxdirty/toolchain/bin" >> $GITHUB_PATH
 
+      # Clonación del SDK de KernelPatch
       - name: Clone KernelPatch SDK
         run: |
           git clone --depth 1 https://github.com kpatch
@@ -26,11 +29,13 @@ jobs:
       - name: Build selinux-context-hide
         run: |
           mkdir -p out
-          aarch64-none-linux-gnu-gcc \
+          # 1. Compilar objeto intermedio
+          /home/runner/work/selinuxdirty/selinuxdirty/toolchain/bin/aarch64-none-linux-gnu-gcc \
             -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
             -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
             -c -o selinux_context_hide.o src/selinux_context_hide.c
           
+          # 2. Empaquetar KPM con metadatos oficiales
           python3 kpatch/tools/kpm-pack.py selinux_context_hide.o out/selinux_context_hide.kpm
           rm selinux_context_hide.o
 
@@ -38,14 +43,17 @@ jobs:
       - name: Build selinux-execmem-hide
         run: |
           mkdir -p out
-          aarch64-none-linux-gnu-gcc \
+          # 1. Compilar objeto intermedio
+          /home/runner/work/selinuxdirty/selinuxdirty/toolchain/bin/aarch64-none-linux-gnu-gcc \
             -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
             -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
             -c -o selinux_execmem_hide.o src/selinux_execmem_hide.c
           
+          # 2. Empaquetar KPM con metadatos oficiales
           python3 kpatch/tools/kpm-pack.py selinux_execmem_hide.o out/selinux_execmem_hide.kpm
           rm selinux_execmem_hide.o
 
+      # Subida de artefactos finales
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
         with:
