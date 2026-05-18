@@ -1,5 +1,9 @@
 #include <kpmodule.h>
 #include <hook.h>
+#include <linux/types.h>   // Requerido para u32, u16
+#include <linux/string.h>  // Requerido para strlen
+#include <linux/errno.h>   // Requerido para -ENOENT, -EINVAL
+#include <linux/gfp.h>     // Requerido para gfp_t y GFP_KERNEL
 #include "compat.h"
 
 KPM_NAME("selinux-execmem-hide");
@@ -41,8 +45,10 @@ static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
 static long execmem_hide_init(const char *args, const char *event,
                                void *__user reserved)
 {
-    fn_security_context_to_sid =
-        (void *)kallsyms_lookup_name("security_context_to_sid");
+    // CORRECCIÓN: Casters seguros usando unsigned long para evitar warnings de tamaño de puntero
+    unsigned long addr_context = kallsyms_lookup_name("security_context_to_sid");
+    fn_security_context_to_sid = (void *)addr_context;
+    
     if (!fn_security_context_to_sid) {
         pr_err("[execmem-hide] No se encontró security_context_to_sid\n");
         return -ENOENT;
@@ -56,7 +62,9 @@ static long execmem_hide_init(const char *args, const char *event,
         return -EINVAL;
     }
 
-    void *sym = (void *)kallsyms_lookup_name("security_compute_av");
+    unsigned long addr_compute = kallsyms_lookup_name("security_compute_av");
+    void *sym = (void *)addr_compute;
+    
     if (!sym) {
         pr_err("[execmem-hide] No se encontró security_compute_av\n");
         return -ENOENT;
