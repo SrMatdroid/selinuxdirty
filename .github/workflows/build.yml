@@ -12,24 +12,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Instalar el compilador oficial de ARM64 directamente desde los repositorios estables de Ubuntu
+      # 1. Instalar el compilador oficial de ARM64 desde repositorios estables
       - name: Install Native ARM64 Cross-Compiler
         run: |
           sudo apt-get update -y
           sudo apt-get install -y gcc-aarch64-linux-gnu make git python3
 
-      # 2. Clonación del SDK de KernelPatch
+      # 2. Clonación correcta del SDK de KPatch-Next
       - name: Clone KernelPatch SDK
         run: |
           git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next-Module
-
-      # 3. Compilación y empaquetado oficial de selinux-context-hide
+      # 3. Compilación y empaquetado de selinux-context-hide
       - name: Build selinux-context-hide
         run: |
           mkdir -p out
-          # Se invoca al compilador nativo del sistema de forma directa
+          # Se añade -Ikpatch/kernel/common/include para encontrar kpmodule.h
           aarch64-linux-gnu-gcc \
-            -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
             -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
             -c -o selinux_context_hide.o src/selinux_context_hide.c
           
@@ -37,13 +36,13 @@ jobs:
           python3 kpatch/tools/kpm-pack.py selinux_context_hide.o out/selinux_context_hide.kpm
           rm selinux_context_hide.o
 
-      # 4. Compilación y empaquetado oficial de selinux-execmem-hide
+      # 4. Compilación y empaquetado de selinux-execmem-hide
       - name: Build selinux-execmem-hide
         run: |
           mkdir -p out
-          # Se invoca al compilador nativo del sistema de forma directa
+          # Se añade -Ikpatch/kernel/common/include para encontrar kpmodule.h
           aarch64-linux-gnu-gcc \
-            -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
             -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
             -c -o selinux_execmem_hide.o src/selinux_execmem_hide.c
           
@@ -51,7 +50,7 @@ jobs:
           python3 kpatch/tools/kpm-pack.py selinux_execmem_hide.o out/selinux_execmem_hide.kpm
           rm selinux_execmem_hide.o
 
-      # 5. Subida de artefactos finales firmados para el móvil
+      # 5. Subida de los módulos .kpm generados
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
         with:
