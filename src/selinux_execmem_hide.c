@@ -1,3 +1,8 @@
+// selinux_execmem_hide.c
+// KPM: Oculta dirty sepolicy rules (system_server execmem) a apps detectoras
+// License: GPL-3.0
+// Author: SrMatdroid
+
 #include <hook.h>
 #include <kpmodule.h>
 #include <kputils.h>
