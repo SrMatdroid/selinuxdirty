@@ -14,43 +14,43 @@ jobs:
 
       - name: Install ARM GNU Toolchain 12.2
         run: |
-          wget -q https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
+          wget -q https://arm.com
           tar xf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
           echo "TOOLCHAIN_PATH=$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_ENV
           echo "$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_PATH
 
       - name: Clone KernelPatch SDK
         run: |
-          git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next kpatch
+          git clone --depth 1 https://github.com kpatch
 
       - name: Build KPM
         run: |
           KP_DIR=kpatch
           CC=aarch64-none-linux-gnu-gcc
           
-          # 1. Definimos los archivos fuente separados por espacios (puedes agregar más aquí)
+          # 1. Definimos los archivos fuente (asumiendo que están dentro de la carpeta src/)
           SRCS="selinux_context_hide.c selinux_execmem_hide.c"
           
           # Creamos el directorio de salida si no existe
           mkdir -p out
           
           # Configuración de Includes basada en el SDK de KPatch
-          INCLUDE_FLAGS="-I. -I$KP_DIR/kernel/include -I$KP_DIR/kernel/patch/include -I$KP_DIR/kernel/linux/include -I$KP_DIR/kernel/linux/arch/arm64/include"
+          INCLUDE_FLAGS="-Isrc -I. -I$KP_DIR/kernel/include -I$KP_DIR/kernel/patch/include -I$KP_DIR/kernel/linux/include -I$KP_DIR/kernel/linux/arch/arm64/include"
           
           # Flags para entorno kernel (evita dependencias de librerías de usuario)
           CFLAGS="-O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user="
           
-          # 2. Iteramos en el bucle para procesar cada archivo individualmente
+          # 2. Iteramos en el bucle buscando en la carpeta src/
           for src_file in $SRCS; do
             # Obtenemos el nombre base sin la extensión .c (ej: selinux_context_hide)
             base_name=$(basename "$src_file" .c)
             
             echo "-----------------------------------"
-            echo "Procesando: $src_file"
+            echo "Procesando: src/$src_file"
             echo "-----------------------------------"
             
             echo "Compilando objeto para $base_name..."
-            $CC $INCLUDE_FLAGS $CFLAGS -c -o "$base_name.o" "$src_file"
+            $CC $INCLUDE_FLAGS $CFLAGS -c -o "$base_name.o" "src/$src_file"
             
             echo "Enlazando KPM para $base_name..."
             # Guardamos el archivo .kpm final directamente en la carpeta 'out'
