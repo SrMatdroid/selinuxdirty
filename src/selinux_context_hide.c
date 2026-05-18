@@ -1,16 +1,6 @@
-// selinux_context_hide.c
-// KPM: intercept SELinux context validation for root-related types
-// License: GPL-3.0
-
 #include <kpmodule.h>
 #include <hook.h>
-#include <linux/string.h>
-#include <linux/cred.h>
-#include <asm/current.h>
-#include <uapi/asm-generic/errno.h>
-
-/* kallsyms_lookup_name declarado manualmente */
-extern unsigned long kallsyms_lookup_name(const char *name);
+#include "compat.h"
 
 KPM_NAME("selinux-context-hide");
 KPM_VERSION("1.0.0");
@@ -39,18 +29,12 @@ static int hook_security_setprocattr(const char *lsm, const char *name,
     if (!value || size == 0)
         goto original;
 
-    uid_t uid = current_uid().val;
-    if (uid < 10000)
-        goto original;
-
     const char *ctx = (const char *)value;
 
     for (int i = 0; hidden_types[i] != NULL; i++) {
-        const char *type = hidden_types[i];
-        size_t type_len = strlen(type);
-        if (size >= type_len && strncmp(ctx, type, type_len) == 0) {
+        size_t type_len = strlen(hidden_types[i]);
+        if (size >= type_len && strncmp(ctx, hidden_types[i], type_len) == 0)
             return -EINVAL;
-        }
     }
 
 original:
@@ -73,7 +57,7 @@ static long selinux_hide_init(const char *args, const char *event,
         return ret;
     }
 
-    pr_info("[selinux-hide] Hook instalado @ %px\n", sym);
+    pr_info("[selinux-hide] Hook instalado\n");
     return 0;
 }
 
