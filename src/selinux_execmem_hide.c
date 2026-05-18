@@ -1,17 +1,6 @@
-// selinux_execmem_hide.c
-// KPM: Oculta dirty sepolicy rules (system_server execmem) a apps detectoras
-// License: GPL-3.0
-// Author: SrMatdroid
-
 #include <kpmodule.h>
 #include <hook.h>
-#include <linux/string.h>
-#include <linux/cred.h>
-#include <asm/current.h>
-#include <uapi/asm-generic/errno.h>
-
-/* kallsyms_lookup_name declarado manualmente */
-extern unsigned long kallsyms_lookup_name(const char *name);
+#include "compat.h"
 
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
@@ -43,10 +32,6 @@ static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
     if (!system_server_sid)
         return;
 
-    uid_t uid = current_uid().val;
-    if (uid < 10000)
-        return;
-
     if (ssid == system_server_sid && tsid == system_server_sid) {
         avd->allowed = 0;
         avd->auditallow = 0;
@@ -71,8 +56,6 @@ static long execmem_hide_init(const char *args, const char *event,
         return -EINVAL;
     }
 
-    pr_info("[execmem-hide] system_server SID = %u\n", system_server_sid);
-
     void *sym = (void *)kallsyms_lookup_name("security_compute_av");
     if (!sym) {
         pr_err("[execmem-hide] No se encontró security_compute_av\n");
@@ -86,7 +69,7 @@ static long execmem_hide_init(const char *args, const char *event,
         return ret;
     }
 
-    pr_info("[execmem-hide] Hook instalado @ %px\n", sym);
+    pr_info("[execmem-hide] Hook instalado, SID=%u\n", system_server_sid);
     return 0;
 }
 
