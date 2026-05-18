@@ -18,60 +18,40 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y make git curl tar
+          sudo apt-get install -y make git curl tar python3
 
       - name: Download ARM GNU Toolchain 12.2.Rel1
         run: |
           mkdir -p toolchain
-          curl -L "https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz" \
+          curl -L "https://arm.com" \
             -o toolchain.tar.xz
           tar -xf toolchain.tar.xz -C toolchain --strip-components=1
 
       - name: Clone KernelPatch
         run: |
-          git clone --depth=1 https://github.com/bmax121/KernelPatch.git kpatch
+          git clone --depth=1 https://github.com kpatch
 
-      - name: Build selinux-context-hide
+      - name: Build KPMs using Native KernelPatch Tool
         run: |
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
-          aarch64-none-elf-gcc \
-            -c \
-            -I src \
-            -I kpatch/kernel/include \
-            -I kpatch/kernel/patch/include \
-            -I kpatch/kernel/include/uapi \
-            -D__user= \
-            -fno-builtin \
-            -ffreestanding \
-            -fno-stack-protector \
-            -fpic \
-            -O2 \
-            -Wall \
-            -Wno-implicit-function-declaration \
-            src/selinux_context_hide.c \
-            -o out/selinux_context_hide.kpm
+          
+          # Compilación usando el script de empaquetado nativo de KernelPatch
+          # Esto inyecta los símbolos de kpm, kpver y los offsets requeridos por el cargador
+          
+          # 1. Compilar selinux-context-hide
+          aarch64-none-elf-gcc -c -O2 -fpic -ffreestanding -fno-builtin -fno-stack-protector \
+            -I src -I kpatch/kernel/include -I kpatch/kernel/patch/include \
+            -D__user= -Wall src/selinux_context_hide.c -o out/selinux_context_hide.o
+          
+          python3 kpatch/tools/kpm-pack.py out/selinux_context_hide.o out/selinux_context_hide.kpm
 
-      - name: Build selinux-execmem-hide
-        run: |
-          export PATH="$PWD/toolchain/bin:$PATH"
-          mkdir -p out
-          aarch64-none-elf-gcc \
-            -c \
-            -I src \
-            -I kpatch/kernel/include \
-            -I kpatch/kernel/patch/include \
-            -I kpatch/kernel/include/uapi \
-            -D__user= \
-            -fno-builtin \
-            -ffreestanding \
-            -fno-stack-protector \
-            -fpic \
-            -O2 \
-            -Wall \
-            -Wno-implicit-function-declaration \
-            src/selinux_execmem_hide.c \
-            -o out/selinux_execmem_hide.kpm
+          # 2. Compilar selinux-execmem-hide
+          aarch64-none-elf-gcc -c -O2 -fpic -ffreestanding -fno-builtin -fno-stack-protector \
+            -I src -I kpatch/kernel/include -I kpatch/kernel/patch/include \
+            -D__user= -Wall src/selinux_execmem_hide.c -o out/selinux_execmem_hide.o
+          
+          python3 kpatch/tools/kpm-pack.py out/selinux_execmem_hide.o out/selinux_execmem_hide.kpm
 
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
