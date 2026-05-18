@@ -1,16 +1,25 @@
-#include <kpmodule.h>
+// selinux_execmem_hide.c
+// KPM: Oculta dirty sepolicy rules (system_server execmem) a apps detectoras
+// License: GPL-3.0
+// Author: SrMatdroid
+
+#include <compiler.h>
 #include <hook.h>
-#include "compat.h"
+#include <kpmodule.h>
+#include <kputils.h>
+#include <linux/gfp.h>
+#include <linux/string.h>
+#include <linux/cred.h>
+#include <asm/current.h>
+#include <uapi/asm-generic/errno.h>
 
-#define EINVAL  22
-#define ENOENT  2
-#define GFP_KERNEL 0xCC0UL // Bandera genérica si tu compat.h no la hereda
+KPM_NAME("selinux-execmem-hide");
+KPM_VERSION("1.0.0");
+KPM_LICENSE("GPL v3");
+KPM_DESCRIPTION("Hide dirty execmem sepolicy rule from untrusted app detectors");
+KPM_AUTHOR("SrMatdroid");
 
-// KernelPatch maneja u32/u16 mediante sus tipos base embebidos, o usando los del propio compilador
-typedef unsigned int u32;
-typedef unsigned short u16;
-typedef unsigned int gfp_t;
-
+// Definir av_decision manualmente - struct interno del kernel
 struct av_decision {
     u32 allowed;
     u32 auditallow;
@@ -20,22 +29,29 @@ struct av_decision {
 };
 
 static void (*orig_security_compute_av)(u32 ssid, u32 tsid, u16 tclass,
-                                        struct av_decision *avd) = NULL;
+                                         struct av_decision *avd) = NULL;
 
 static int (*fn_security_context_to_sid)(const char *scontext, u32 scontext_len,
-                                         u32 *out_sid, gfp_t gfp) = NULL;
+                                          u32 *out_sid, gfp_t gfp) = NULL;
 
 static u32 system_server_sid = 0;
-size_t strlen(const char *s);
 
 static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
-                                     struct av_decision *avd)
+                                      struct av_decision *avd)
 {
     orig_security_compute_av(ssid, tsid, tclass, avd);
 
+    // SID no resuelto en init, no hacer nada
     if (!system_server_sid)
         return;
 
+    // Solo apps no privilegiadas (uid >= 10000)
+    uid_t uid = current_uid().val;
+    if (uid < 10000)
+        return;
+
+    // Si una app untrusted consulta AV para system_server -> system_server
+    // ocultar todos los permisos (incluido execmem)
     if (ssid == system_server_sid && tsid == system_server_sid) {
         avd->allowed = 0;
         avd->auditallow = 0;
@@ -45,25 +61,26 @@ static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
 static long execmem_hide_init(const char *args, const char *event,
                                void *__user reserved)
 {
-    unsigned long addr_context = kallsyms_lookup_name("security_context_to_sid");
-    fn_security_context_to_sid = (void *)addr_context;
-    
+    int ret = 0;
+
+    fn_security_context_to_sid =
+        (void *)kallsyms_lookup_name("security_context_to_sid");
     if (!fn_security_context_to_sid) {
         pr_err("[execmem-hide] No se encontró security_context_to_sid\n");
         return -ENOENT;
     }
 
     const char *sys_ctx = "u:r:system_server:s0";
-    int ret = fn_security_context_to_sid(sys_ctx, strlen(sys_ctx),
-                                         &system_server_sid, GFP_KERNEL);
+    ret = fn_security_context_to_sid(sys_ctx, strlen(sys_ctx),
+                                      &system_server_sid, GFP_KERNEL);
     if (ret || !system_server_sid) {
-        pr_err("[execmem-hide] Fallo al resolver SID: %d\n", ret);
+        pr_err("[execmem-hide] Fallo al resolver SID system_server: %d\n", ret);
         return -EINVAL;
     }
 
-    unsigned long addr_compute = kallsyms_lookup_name("security_compute_av");
-    void *sym = (void *)addr_compute;
-    
+    pr_info("[execmem-hide] system_server SID resuelto = %u\n", system_server_sid);
+
+    void *sym = (void *)kallsyms_lookup_name("security_compute_av");
     if (!sym) {
         pr_err("[execmem-hide] No se encontró security_compute_av\n");
         return -ENOENT;
@@ -76,7 +93,7 @@ static long execmem_hide_init(const char *args, const char *event,
         return ret;
     }
 
-    pr_info("[execmem-hide] Hook instalado, SID=%u\n", system_server_sid);
+    pr_info("[execmem-hide] Hook instalado @ %px\n", sym);
     return 0;
 }
 
