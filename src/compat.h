@@ -10,19 +10,16 @@ typedef unsigned int   gfp_t;
 #define NULL ((void *)0)
 #endif
 
-#define ENOENT      2
-#define EINVAL      22
-#define EPERM       1
-#define GFP_KERNEL  0x400000u
+#define ENOENT     2
+#define EINVAL     22
+#define EPERM      1
+#define GFP_KERNEL 0x400000u
 
-#define KERN_ERR   "\0013"
-#define KERN_INFO  "\0016"
-
+/* String functions del kernel */
 extern int    strcmp(const char *cs, const char *ct);
 extern int    strncmp(const char *cs, const char *ct, size_t count);
 extern size_t strlen(const char *s);
-extern int    printk(const char *fmt, ...);
-extern unsigned long kallsyms_lookup_name(const char *name);
 
-#define pr_info(fmt, ...) printk(KERN_INFO fmt, ##__VA_ARGS__)
-#define pr_err(fmt, ...)  printk(KERN_ERR  fmt, ##__VA_ARGS__)
+/* pr_info/pr_err usan el printk que ya declara hook.h */
+#define pr_info(fmt, ...) printk("[INFO] " fmt, ##__VA_ARGS__)
+#define pr_err(fmt, ...)  printk("[ERR] "  fmt, ##__VA_ARGS__)
