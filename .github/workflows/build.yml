@@ -14,8 +14,7 @@ jobs:
 
       # Descarga nativa y descompresión directa y segura del toolchain de ARM
       - name: Install ARM GNU Toolchain 12.2
-        run: |
-          mkdir -p toolchain
+        run: 
           curl -L "https://arm.com" -o toolchain.tar.xz
           tar -xf toolchain.tar.xz -C toolchain --strip-components=1
           echo "$PWD/toolchain/bin" >> $GITHUB_PATH
