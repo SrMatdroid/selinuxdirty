@@ -1,5 +1,7 @@
 #include <kpmodule.h>
 #include <hook.h>
+#include <linux/string.h>  // Requerido para strcmp, strlen, strncmp en el kernel
+#include <linux/errno.h>   // Requerido para -EINVAL, -ENOENT
 #include "compat.h"
 
 KPM_NAME("selinux-context-hide");
@@ -45,15 +47,18 @@ static long selinux_hide_init(const char *args, const char *event,
                                void *__user reserved)
 {
     unsigned long addr = kallsyms_lookup_name("security_setprocattr");
-void *sym = (void *)addr;
-        pr_err("[selinux-hide] No se encontró security_setprocattr\n");
+    void *sym = (void *)addr;
+
+    // CORRECCIÓN: Se añadió el 'if' que faltaba y rompía la sintaxis
+    if (!sym) {
+        pr_err("[selinux-hide] No se encontro security_setprocattr\n");
         return -ENOENT;
     }
 
     int ret = hook_func(sym, (void *)hook_security_setprocattr,
                         (void **)&orig_security_setprocattr);
     if (ret) {
-        pr_err("[selinux-hide] hook_func falló: %d\n", ret);
+        pr_err("[selinux-hide] hook_func fallo: %d\n", ret);
         return ret;
     }
 
