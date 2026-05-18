@@ -36,36 +36,42 @@ jobs:
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
+            -c \
+            -I src \
             -I kpatch/kernel/include \
             -I kpatch/kernel/patch/include \
+            -I kpatch/kernel/include/uapi \
             -D__user= \
-            -nostdlib \
             -fno-builtin \
             -ffreestanding \
             -fno-stack-protector \
             -fpic \
+            -O2 \
             -Wall \
             -Wno-implicit-function-declaration \
-            -o out/selinux_context_hide.kpm \
-            src/selinux_context_hide.c
+            src/selinux_context_hide.c \
+            -o out/selinux_context_hide.kpm
 
       - name: Build selinux-execmem-hide
         run: |
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
+            -c \
+            -I src \
             -I kpatch/kernel/include \
             -I kpatch/kernel/patch/include \
+            -I kpatch/kernel/include/uapi \
             -D__user= \
-            -nostdlib \
             -fno-builtin \
             -ffreestanding \
             -fno-stack-protector \
             -fpic \
+            -O2 \
             -Wall \
             -Wno-implicit-function-declaration \
-            -o out/selinux_execmem_hide.kpm \
-            src/selinux_execmem_hide.c
+            src/selinux_execmem_hide.c \
+            -o out/selinux_execmem_hide.kpm
 
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
