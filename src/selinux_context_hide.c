@@ -1,11 +1,16 @@
-#include <kpmodule.h>
-#include <hook.h>
-#include "compat.h"
+// selinux_context_hide.c
+// KPM: intercept SELinux context validation for root-related types
+// License: GPL-3.0
 
-// KernelPatch ya expone definiciones básicas de tipos y cadenas de forma interna.
-// Si necesitas sz/error, los definimos localmente si no están en compat.h
-#define EINVAL  22
-#define ENOENT  2
+#include <compiler.h>
+#include <hook.h>
+#include <kpmodule.h>
+#include <kputils.h>
+#include <linux/err.h>
+#include <linux/string.h>
+#include <linux/cred.h>
+#include <asm/current.h>
+#include <uapi/asm-generic/errno.h>
 
 KPM_NAME("selinux-context-hide");
 KPM_VERSION("1.0.0");
@@ -13,6 +18,7 @@ KPM_LICENSE("GPL v3");
 KPM_DESCRIPTION("Hide KSU/Magisk SELinux contexts from untrusted apps");
 KPM_AUTHOR("SrMatdroid");
 
+// Tipos a ocultar - exactamente como aparecen en la policy
 static const char *hidden_types[] = {
     "u:r:ksu:s0",
     "u:r:ksu_file:s0",
@@ -22,29 +28,39 @@ static const char *hidden_types[] = {
     NULL
 };
 
+// Firma: int selinux_setprocattr(const char *name, void *value, size_t size)
+// En kernel 5.10 el hook es sobre security_setprocattr
 static int (*orig_security_setprocattr)(const char *lsm, const char *name,
-                                        void *value, size_t size) = NULL;
-
-// Declaraciones nativas del compilador freestanding para evitar incluir linux/string.h
-int strcmp(const char *s1, const char *s2);
-size_t strlen(const char *s);
-int strncmp(const char *s1, const char *s2, size_t n);
+                                         void *value, size_t size) = NULL;
 
 static int hook_security_setprocattr(const char *lsm, const char *name,
-                                     void *value, size_t size)
+                                      void *value, size_t size)
 {
+    // Solo interceptar escrituras a "current"
     if (!name || strcmp(name, "current") != 0)
         goto original;
 
     if (!value || size == 0)
         goto original;
 
+    // Comprobar si el caller es una app no privilegiada (uid >= 10000)
+    uid_t uid = current_uid().val;
+    if (uid < 10000)
+        goto original;
+
+    // Buscar si el contexto que se intenta escribir contiene tipos root
     const char *ctx = (const char *)value;
 
     for (int i = 0; hidden_types[i] != NULL; i++) {
-        size_t type_len = strlen(hidden_types[i]);
-        if (size >= type_len && strncmp(ctx, hidden_types[i], type_len) == 0)
+        // Comparación parcial: el contexto puede tener categorías adicionales
+        // ej: "u:r:ksu:s0:c512,c768" también debe ser interceptado
+        const char *type = hidden_types[i];
+        size_t type_len = strlen(type);
+
+        if (size >= type_len && strncmp(ctx, type, type_len) == 0) {
+            // Devolver EINVAL: "este tipo no existe en la policy"
             return -EINVAL;
+        }
     }
 
 original:
@@ -54,22 +70,23 @@ original:
 static long selinux_hide_init(const char *args, const char *event,
                                void *__user reserved)
 {
-    unsigned long addr = kallsyms_lookup_name("security_setprocattr");
-    void *sym = (void *)addr;
+    int ret = 0;
 
+    // Resolver símbolo - en GKI 5.10 está exportado
+    void *sym = kallsyms_lookup_name("security_setprocattr");
     if (!sym) {
-        pr_err("[selinux-hide] No se encontro security_setprocattr\n");
+        pr_err("[selinux-hide] No se encontró security_setprocattr\n");
         return -ENOENT;
     }
 
-    int ret = hook_func(sym, (void *)hook_security_setprocattr,
-                        (void **)&orig_security_setprocattr);
+    ret = hook_func(sym, (void *)hook_security_setprocattr,
+                    (void **)&orig_security_setprocattr);
     if (ret) {
-        pr_err("[selinux-hide] hook_func fallo: %d\n", ret);
+        pr_err("[selinux-hide] hook_func falló: %d\n", ret);
         return ret;
     }
 
-    pr_info("[selinux-hide] Hook instalado\n");
+    pr_info("[selinux-hide] Hook instalado en security_setprocattr @ %px\n", sym);
     return 0;
 }
 
