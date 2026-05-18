@@ -19,6 +19,9 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y make git curl tar
+          
+      - name: Debug KPatch structure
+        run: find kpatch/kernel/patch/include -type f | head -40
 
       - name: Download ARM GNU Toolchain 12.2.Rel1
         run: |
