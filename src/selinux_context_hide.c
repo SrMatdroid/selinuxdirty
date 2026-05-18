@@ -2,13 +2,15 @@
 // KPM: intercept SELinux context validation for root-related types
 // License: GPL-3.0
 
-#include <hook.h>
 #include <kpmodule.h>
-#include <kputils.h>
+#include <hook.h>
 #include <linux/string.h>
 #include <linux/cred.h>
 #include <asm/current.h>
 #include <uapi/asm-generic/errno.h>
+
+/* kallsyms_lookup_name declarado manualmente */
+extern unsigned long kallsyms_lookup_name(const char *name);
 
 KPM_NAME("selinux-context-hide");
 KPM_VERSION("1.0.0");
