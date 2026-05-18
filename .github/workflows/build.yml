@@ -27,27 +27,41 @@ jobs:
             -o toolchain.tar.xz
           tar -xf toolchain.tar.xz -C toolchain --strip-components=1
 
-      - name: Clone KPatch-Next
+      - name: Clone KernelPatch (headers)
         run: |
           git clone --depth=1 https://github.com/bmax121/KernelPatch.git kpatch
 
       - name: Build selinux-context-hide
         run: |
           export PATH="$PWD/toolchain/bin:$PATH"
-          make -C kpatch/tools/kpimg/android \
-            ARCH=arm64 \
-            CROSS_COMPILE=aarch64-none-elf- \
-            KPM_SRC="$PWD/src/selinux_context_hide.c" \
-            KPM_OUT="$PWD/out/selinux_context_hide.kpm"
+          mkdir -p out
+          aarch64-none-elf-gcc \
+            -I kpatch/kernel/patch/include \
+            -nostdlib \
+            -fno-builtin \
+            -ffreestanding \
+            -fno-stack-protector \
+            -fpic \
+            -Wall \
+            -Wno-implicit-function-declaration \
+            -o out/selinux_context_hide.kpm \
+            src/selinux_context_hide.c
 
       - name: Build selinux-execmem-hide
         run: |
           export PATH="$PWD/toolchain/bin:$PATH"
-          make -C kpatch/tools/kpimg/android \
-            ARCH=arm64 \
-            CROSS_COMPILE=aarch64-none-elf- \
-            KPM_SRC="$PWD/src/selinux_execmem_hide.c" \
-            KPM_OUT="$PWD/out/selinux_execmem_hide.kpm"
+          mkdir -p out
+          aarch64-none-elf-gcc \
+            -I kpatch/kernel/patch/include \
+            -nostdlib \
+            -fno-builtin \
+            -ffreestanding \
+            -fno-stack-protector \
+            -fpic \
+            -Wall \
+            -Wno-implicit-function-declaration \
+            -o out/selinux_execmem_hide.kpm \
+            src/selinux_execmem_hide.c
 
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
