@@ -31,27 +31,14 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/bmax121/KernelPatch.git kpatch
 
-      - name: Find KPM headers
-        run: |
-          echo "=== Buscando hook.h ==="
-          find kpatch -name "hook.h" 2>/dev/null
-          echo "=== Buscando kpmodule.h ==="
-          find kpatch -name "kpmodule.h" 2>/dev/null
-          HOOK=$(find kpatch -name "hook.h" | head -1)
-          if [ -z "$HOOK" ]; then
-            echo "ERROR: hook.h no encontrado"
-            exit 1
-          fi
-          INCLUDE_DIR=$(dirname "$HOOK")
-          echo "Include dir: $INCLUDE_DIR"
-          echo "KPM_INCLUDE=$INCLUDE_DIR" >> $GITHUB_ENV
-
       - name: Build selinux-context-hide
         run: |
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
-            -I "$KPM_INCLUDE" \
+            -I kpatch/kernel/include \
+            -I kpatch/kernel/patch/include \
+            -D__user= \
             -nostdlib \
             -fno-builtin \
             -ffreestanding \
@@ -67,7 +54,9 @@ jobs:
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
-            -I "$KPM_INCLUDE" \
+            -I kpatch/kernel/include \
+            -I kpatch/kernel/patch/include \
+            -D__user= \
             -nostdlib \
             -fno-builtin \
             -ffreestanding \
