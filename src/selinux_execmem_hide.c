@@ -3,14 +3,15 @@
 // License: GPL-3.0
 // Author: SrMatdroid
 
-#include <hook.h>
 #include <kpmodule.h>
-#include <kputils.h>
-#include <linux/gfp.h>
+#include <hook.h>
 #include <linux/string.h>
 #include <linux/cred.h>
 #include <asm/current.h>
 #include <uapi/asm-generic/errno.h>
+
+/* kallsyms_lookup_name declarado manualmente */
+extern unsigned long kallsyms_lookup_name(const char *name);
 
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
