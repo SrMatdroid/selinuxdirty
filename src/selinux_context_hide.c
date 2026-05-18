@@ -44,8 +44,8 @@ original:
 static long selinux_hide_init(const char *args, const char *event,
                                void *__user reserved)
 {
-    void *sym = (void *)kallsyms_lookup_name("security_setprocattr");
-    if (!sym) {
+    unsigned long addr = kallsyms_lookup_name("security_setprocattr");
+void *sym = (void *)addr;
         pr_err("[selinux-hide] No se encontró security_setprocattr\n");
         return -ENOENT;
     }
