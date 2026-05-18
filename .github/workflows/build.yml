@@ -19,9 +19,6 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y make git curl tar
-          
-      - name: Debug KPatch structure
-        run: find kpatch/kernel/patch/include -type f | head -40
 
       - name: Download ARM GNU Toolchain 12.2.Rel1
         run: |
@@ -30,16 +27,31 @@ jobs:
             -o toolchain.tar.xz
           tar -xf toolchain.tar.xz -C toolchain --strip-components=1
 
-      - name: Clone KernelPatch (headers)
+      - name: Clone KernelPatch
         run: |
           git clone --depth=1 https://github.com/bmax121/KernelPatch.git kpatch
+
+      - name: Find KPM headers
+        run: |
+          echo "=== Buscando hook.h ==="
+          find kpatch -name "hook.h" 2>/dev/null
+          echo "=== Buscando kpmodule.h ==="
+          find kpatch -name "kpmodule.h" 2>/dev/null
+          HOOK=$(find kpatch -name "hook.h" | head -1)
+          if [ -z "$HOOK" ]; then
+            echo "ERROR: hook.h no encontrado"
+            exit 1
+          fi
+          INCLUDE_DIR=$(dirname "$HOOK")
+          echo "Include dir: $INCLUDE_DIR"
+          echo "KPM_INCLUDE=$INCLUDE_DIR" >> $GITHUB_ENV
 
       - name: Build selinux-context-hide
         run: |
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
-            -I kpatch/kernel/patch/include \
+            -I "$KPM_INCLUDE" \
             -nostdlib \
             -fno-builtin \
             -ffreestanding \
@@ -55,7 +67,7 @@ jobs:
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
-            -I kpatch/kernel/patch/include \
+            -I "$KPM_INCLUDE" \
             -nostdlib \
             -fno-builtin \
             -ffreestanding \
