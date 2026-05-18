@@ -21,7 +21,7 @@ jobs:
       # 2. Clonación del SDK de KernelPatch
       - name: Clone KernelPatch SDK
         run: |
-          git clone --depth 1 https://github.com kpatch
+          git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next-Module
 
       # 3. Compilación y empaquetado oficial de selinux-context-hide
       - name: Build selinux-context-hide
