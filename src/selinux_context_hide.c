@@ -1,8 +1,11 @@
 #include <kpmodule.h>
 #include <hook.h>
-#include <linux/string.h>  // Requerido para strcmp, strlen, strncmp en el kernel
-#include <linux/errno.h>   // Requerido para -EINVAL, -ENOENT
 #include "compat.h"
+
+// KernelPatch ya expone definiciones básicas de tipos y cadenas de forma interna.
+// Si necesitas sz/error, los definimos localmente si no están en compat.h
+#define EINVAL  22
+#define ENOENT  2
 
 KPM_NAME("selinux-context-hide");
 KPM_VERSION("1.0.0");
@@ -21,6 +24,11 @@ static const char *hidden_types[] = {
 
 static int (*orig_security_setprocattr)(const char *lsm, const char *name,
                                         void *value, size_t size) = NULL;
+
+// Declaraciones nativas del compilador freestanding para evitar incluir linux/string.h
+int strcmp(const char *s1, const char *s2);
+size_t strlen(const char *s);
+int strncmp(const char *s1, const char *s2, size_t n);
 
 static int hook_security_setprocattr(const char *lsm, const char *name,
                                      void *value, size_t size)
@@ -49,7 +57,6 @@ static long selinux_hide_init(const char *args, const char *event,
     unsigned long addr = kallsyms_lookup_name("security_setprocattr");
     void *sym = (void *)addr;
 
-    // CORRECCIÓN: Se añadió el 'if' que faltaba y rompía la sintaxis
     if (!sym) {
         pr_err("[selinux-hide] No se encontro security_setprocattr\n");
         return -ENOENT;
