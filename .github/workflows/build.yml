@@ -27,7 +27,12 @@ jobs:
         run: |
           KP_DIR=kpatch
           CC=aarch64-none-linux-gnu-gcc
-          SRC=uname_spoof.c
+          
+          # 1. Definimos los archivos fuente separados por espacios (puedes agregar más aquí)
+          SRCS="selinux_context_hide.c selinux_execmem_hide.c"
+          
+          # Creamos el directorio de salida si no existe
+          mkdir -p out
           
           # Configuración de Includes basada en el SDK de KPatch
           INCLUDE_FLAGS="-I. -I$KP_DIR/kernel/include -I$KP_DIR/kernel/patch/include -I$KP_DIR/kernel/linux/include -I$KP_DIR/kernel/linux/arch/arm64/include"
@@ -35,12 +40,25 @@ jobs:
           # Flags para entorno kernel (evita dependencias de librerías de usuario)
           CFLAGS="-O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user="
           
-          echo "Compilando objeto..."
-          $CC $INCLUDE_FLAGS $CFLAGS -c -o uname_spoof.o $SRC
-          
-          echo "Enlazando KPM..."
-          # Usamos -r para generar un objeto reubicable (formato KPM)
-          $CC -r -o uname_spoof.kpm uname_spoof.o
+          # 2. Iteramos en el bucle para procesar cada archivo individualmente
+          for src_file in $SRCS; do
+            # Obtenemos el nombre base sin la extensión .c (ej: selinux_context_hide)
+            base_name=$(basename "$src_file" .c)
+            
+            echo "-----------------------------------"
+            echo "Procesando: $src_file"
+            echo "-----------------------------------"
+            
+            echo "Compilando objeto para $base_name..."
+            $CC $INCLUDE_FLAGS $CFLAGS -c -o "$base_name.o" "$src_file"
+            
+            echo "Enlazando KPM para $base_name..."
+            # Guardamos el archivo .kpm final directamente en la carpeta 'out'
+            $CC -r -o "out/$base_name.kpm" "$base_name.o"
+            
+            # Limpiamos el .o intermedio
+            rm "$base_name.o"
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
