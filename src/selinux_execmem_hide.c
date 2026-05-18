@@ -1,16 +1,15 @@
 #include <kpmodule.h>
 #include <hook.h>
-#include <linux/types.h>   // Requerido para u32, u16
-#include <linux/string.h>  // Requerido para strlen
-#include <linux/errno.h>   // Requerido para -ENOENT, -EINVAL
-#include <linux/gfp.h>     // Requerido para gfp_t y GFP_KERNEL
 #include "compat.h"
 
-KPM_NAME("selinux-execmem-hide");
-KPM_VERSION("1.0.0");
-KPM_LICENSE("GPL v3");
-KPM_DESCRIPTION("Hide dirty execmem sepolicy rule from untrusted app detectors");
-KPM_AUTHOR("SrMatdroid");
+#define EINVAL  22
+#define ENOENT  2
+#define GFP_KERNEL 0xCC0UL // Bandera genérica si tu compat.h no la hereda
+
+// KernelPatch maneja u32/u16 mediante sus tipos base embebidos, o usando los del propio compilador
+typedef unsigned int u32;
+typedef unsigned short u16;
+typedef unsigned int gfp_t;
 
 struct av_decision {
     u32 allowed;
@@ -27,6 +26,7 @@ static int (*fn_security_context_to_sid)(const char *scontext, u32 scontext_len,
                                          u32 *out_sid, gfp_t gfp) = NULL;
 
 static u32 system_server_sid = 0;
+size_t strlen(const char *s);
 
 static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
                                      struct av_decision *avd)
@@ -45,7 +45,6 @@ static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
 static long execmem_hide_init(const char *args, const char *event,
                                void *__user reserved)
 {
-    // CORRECCIÓN: Casters seguros usando unsigned long para evitar warnings de tamaño de puntero
     unsigned long addr_context = kallsyms_lookup_name("security_context_to_sid");
     fn_security_context_to_sid = (void *)addr_context;
     
