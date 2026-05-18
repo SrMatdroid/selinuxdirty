@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # CORRECCIÓN: Método oficial y estable para instalar el toolchain de AArch64 sin enlaces caídos
+      # Instalación oficial del toolchain de AArch64
       - name: Install ARM GNU Toolchain
         uses: gcc-arm-embedded/program-action@v1
         with:
@@ -22,31 +22,27 @@ jobs:
         run: |
           git clone --depth 1 https://github.com kpatch
 
-       Tarjeta de compilación de selinux-context-hide
+      # Compilación de selinux-context-hide
       - name: Build selinux-context-hide
         run: |
           mkdir -p out
-          # 1. Compilar el archivo objeto intermedio .o sin enlazar
           aarch64-none-linux-gnu-gcc \
             -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
             -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
             -c -o selinux_context_hide.o src/selinux_context_hide.c
           
-          # 2. Empaquetar usando el script oficial de KPatch-Next para inyectar los metadatos (.kpm.meta)
           python3 kpatch/tools/kpm-pack.py selinux_context_hide.o out/selinux_context_hide.kpm
           rm selinux_context_hide.o
 
-      # Tarjeta de compilación de selinux-execmem-hide
+      # Compilación de selinux-execmem-hide
       - name: Build selinux-execmem-hide
         run: |
           mkdir -p out
-          # 1. Compilar el archivo objeto intermedio .o sin enlazar
           aarch64-none-linux-gnu-gcc \
             -Isrc -I. -Ikpatch/kernel/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
             -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
             -c -o selinux_execmem_hide.o src/selinux_execmem_hide.c
           
-          # 2. Empaquetar usando el script oficial de KPatch-Next para inyectar los metadatos (.kpm.meta)
           python3 kpatch/tools/kpm-pack.py selinux_execmem_hide.o out/selinux_execmem_hide.kpm
           rm selinux_execmem_hide.o
 
