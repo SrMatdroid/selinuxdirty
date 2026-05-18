@@ -12,17 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install ARM GNU Toolchain 12.2
-        run: |
-          wget -q https://arm.com
-          tar xf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-          echo "TOOLCHAIN_PATH=$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_ENV
-          echo "$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> $GITHUB_PATH
+      # CORRECCIÓN: Método oficial y estable para instalar el toolchain de AArch64 sin enlaces caídos
+      - name: Install ARM GNU Toolchain
+        uses: gcc-arm-embedded/program-action@v1
+        with:
+          platform: 'aarch64-none-linux-gnu'
 
       - name: Clone KernelPatch SDK
         run: |
           git clone --depth 1 https://github.com kpatch
 
+       Tarjeta de compilación de selinux-context-hide
       - name: Build selinux-context-hide
         run: |
           mkdir -p out
@@ -36,6 +36,7 @@ jobs:
           python3 kpatch/tools/kpm-pack.py selinux_context_hide.o out/selinux_context_hide.kpm
           rm selinux_context_hide.o
 
+      # Tarjeta de compilación de selinux-execmem-hide
       - name: Build selinux-execmem-hide
         run: |
           mkdir -p out
