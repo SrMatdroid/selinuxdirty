@@ -1,0 +1,57 @@
+name: Build KPMs
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y make git curl tar
+
+      - name: Download ARM GNU Toolchain 12.2.Rel1
+        run: |
+          mkdir -p toolchain
+          curl -L "https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz" \
+            -o toolchain.tar.xz
+          tar -xf toolchain.tar.xz -C toolchain --strip-components=1
+
+      - name: Clone KPatch-Next
+        run: |
+          git clone --depth=1 https://github.com/bmax121/KernelPatch.git kpatch
+
+      - name: Build selinux-context-hide
+        run: |
+          export PATH="$PWD/toolchain/bin:$PATH"
+          make -C kpatch/tools/kpimg/android \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-none-elf- \
+            KPM_SRC="$PWD/src/selinux_context_hide.c" \
+            KPM_OUT="$PWD/out/selinux_context_hide.kpm"
+
+      - name: Build selinux-execmem-hide
+        run: |
+          export PATH="$PWD/toolchain/bin:$PATH"
+          make -C kpatch/tools/kpimg/android \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-none-elf- \
+            KPM_SRC="$PWD/src/selinux_execmem_hide.c" \
+            KPM_OUT="$PWD/out/selinux_execmem_hide.kpm"
+
+      - name: Upload KPMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpms
+          path: out/*.kpm
+          if-no-files-found: error
