@@ -20,16 +20,6 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next kpatch
 
-      - name: Build selinux-context-hide
-        run: |
-          mkdir -p out
-          aarch64-linux-gnu-gcc \
-            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
-            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
-            -c -o selinux_context_hide.o selinux_context_hide.c
-          aarch64-linux-gnu-gcc -r -o out/selinux_context_hide.kpm selinux_context_hide.o
-          rm selinux_context_hide.o
-
       - name: Build selinux-execmem-hide
         run: |
           mkdir -p out
