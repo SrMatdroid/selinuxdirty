@@ -3,10 +3,10 @@
 #include <kpmodule.h>
 #include <kallsyms.h>
 #include <ktypes.h>
-#include <linux/sched.h>
 #include <linux/cred.h>
 #include <linux/printk.h>
 #include <linux/errno.h>
+#include <linux/string.h>
 
 #define __GFP_DIRECT_RECLAIM 0x400u
 #define __GFP_KSWAPD_RECLAIM 0x800u
@@ -14,6 +14,30 @@
 #define __GFP_FS 0x80u
 #define __GFP_RECLAIM ((gfp_t)(__GFP_DIRECT_RECLAIM | __GFP_KSWAPD_RECLAIM))
 #define GFP_KERNEL ((gfp_t)(__GFP_RECLAIM | __GFP_IO | __GFP_FS))
+
+typedef u32 uid_t;
+
+struct task_struct_offset {
+    int16_t pid_offset;
+    int16_t tgid_offset;
+    int16_t thread_pid_offset;
+    int16_t ptracer_cred_offset;
+    int16_t real_cred_offset;
+    int16_t cred_offset;
+    int16_t comm_offset;
+    int16_t fs_offset;
+    int16_t files_offset;
+    int16_t loginuid_offset;
+    int16_t sessionid_offset;
+    int16_t seccomp_offset;
+    int16_t security_offset;
+    int16_t stack_offset;
+    int16_t tasks_offset;
+    int16_t mm_offset;
+    int16_t active_mm_offset;
+};
+
+extern struct task_struct_offset task_struct_offset;
 
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
