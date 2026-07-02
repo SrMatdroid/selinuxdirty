@@ -1,14 +1,12 @@
 #include <compiler.h>
 #include <hook.h>
 #include <kpmodule.h>
-#include <kputils.h>
 #include <linux/gfp.h>
 #include <linux/printk.h>
 #include <linux/string.h>
 #include <linux/cred.h>
-#include <linux/uidgid.h>
 #include <linux/kallsyms.h>
-#include <uapi/asm-generic/errno.h>
+#include <linux/errno.h>
 
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
@@ -35,7 +33,7 @@ static u32 system_server_sid = 0;
 static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
                                        struct av_decision *avd)
 {
-    uid_t uid;
+    unsigned int uid;
 
     orig_security_compute_av(ssid, tsid, tclass, avd);
 
