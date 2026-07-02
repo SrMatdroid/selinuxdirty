@@ -34,14 +34,12 @@ extern struct task_struct_offset task_struct_offset;
 
 static long test_init(const char *args, const char *event, void *__user reserved)
 {
-    uid_t uid;
     void *task;
     void *cred;
 
     __asm__ volatile("mrs %0, sp_el0" : "=r" (task));
     cred = *(void **)((char *)task + task_struct_offset.cred_offset);
-    uid = *(uid_t *)((char *)cred + cred_offset.uid_offset);
-    (void)uid;
+    (void)cred;
     return 0;
 }
 
