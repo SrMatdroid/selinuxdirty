@@ -12,10 +12,10 @@ TARGET := $(OUT)/selinux_execmem_hide.kpm
 
 all: $(TARGET)
 
-$(KPATCH_DIR)/.git/HEAD:
+$(KPATCH_DIR)/kernel:
 	git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next $(KPATCH_DIR)
 
-sdk: $(KPATCH_DIR)/.git/HEAD
+sdk: $(KPATCH_DIR)/kernel
 
 $(OBJS): %.o: %.c sdk
 	$(CC) $(CFLAGS) $(INC) -c -o $@ $<

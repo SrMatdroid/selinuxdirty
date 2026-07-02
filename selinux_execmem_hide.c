@@ -24,13 +24,12 @@ struct task_struct_offset {
     int16_t ptracer_cred_offset;
     int16_t real_cred_offset;
     int16_t cred_offset;
-    int16_t comm_offset;
     int16_t fs_offset;
     int16_t files_offset;
     int16_t loginuid_offset;
     int16_t sessionid_offset;
+    int16_t comm_offset;
     int16_t seccomp_offset;
-    int16_t security_offset;
     int16_t stack_offset;
     int16_t tasks_offset;
     int16_t mm_offset;
@@ -52,6 +51,31 @@ struct av_decision {
     u32 seqno;
     u32 flags;
 };
+
+struct find_sym_data {
+    const char *name;
+    unsigned long addr;
+};
+
+static int find_sym_cb(void *data, const char *name, struct module *mod, unsigned long addr)
+{
+    struct find_sym_data *d = data;
+    if (strcmp(name, d->name) == 0) {
+        d->addr = addr;
+        return 1;
+    }
+    return 0;
+}
+
+static void *find_sym(const char *name)
+{
+    unsigned long addr = kallsyms_lookup_name(name);
+    if (addr)
+        return (void *)addr;
+    struct find_sym_data data = { .name = name, .addr = 0 };
+    kallsyms_on_each_symbol(find_sym_cb, &data);
+    return (void *)data.addr;
+}
 
 static void (*orig_security_compute_av)(u32 ssid, u32 tsid, u16 tclass,
                                          struct av_decision *avd) = NULL;
@@ -97,8 +121,7 @@ static long execmem_hide_init(const char *args, const char *event,
     int ret;
     void *sym;
 
-    fn_security_context_to_sid =
-        (void *)kallsyms_lookup_name("security_context_to_sid");
+    fn_security_context_to_sid = (void *)find_sym("security_context_to_sid");
     if (!fn_security_context_to_sid) {
         pr_err("[execmem-hide] security_context_to_sid not found\n");
         return -ENOENT;
@@ -116,7 +139,7 @@ static long execmem_hide_init(const char *args, const char *event,
 
     pr_info("[execmem-hide] system_server SID = %u\n", system_server_sid);
 
-    sym = (void *)kallsyms_lookup_name("security_compute_av");
+    sym = find_sym("security_compute_av");
     if (!sym) {
         pr_err("[execmem-hide] security_compute_av not found\n");
         return -ENOENT;
