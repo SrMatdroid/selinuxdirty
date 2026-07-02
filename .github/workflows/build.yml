@@ -39,6 +39,42 @@ jobs:
           aarch64-linux-gnu-gcc -r -o out/test_kpm.kpm test_kpm.o
           rm test_kpm.o
 
+      - name: Build test-kpm2-printk
+        run: |
+          aarch64-linux-gnu-gcc \
+            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o test_kpm2_printk.o test_kpm2_printk.c
+          aarch64-linux-gnu-gcc -r -o out/test_kpm2_printk.kpm test_kpm2_printk.o
+          rm test_kpm2_printk.o
+
+      - name: Build test-kpm3-kallsyms
+        run: |
+          aarch64-linux-gnu-gcc \
+            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o test_kpm3_kallsyms.o test_kpm3_kallsyms.c
+          aarch64-linux-gnu-gcc -r -o out/test_kpm3_kallsyms.kpm test_kpm3_kallsyms.o
+          rm test_kpm3_kallsyms.o
+
+      - name: Build test-kpm4-allsyms
+        run: |
+          aarch64-linux-gnu-gcc \
+            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o test_kpm4_all_syms.o test_kpm4_all_syms.c
+          aarch64-linux-gnu-gcc -r -o out/test_kpm4_all_syms.kpm test_kpm4_all_syms.o
+          rm test_kpm4_all_syms.o
+
+      - name: Build test-kpm5-taskcred
+        run: |
+          aarch64-linux-gnu-gcc \
+            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o test_kpm5_taskcred.o test_kpm5_taskcred.c
+          aarch64-linux-gnu-gcc -r -o out/test_kpm5_taskcred.kpm test_kpm5_taskcred.o
+          rm test_kpm5_taskcred.o
+
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
         with:
