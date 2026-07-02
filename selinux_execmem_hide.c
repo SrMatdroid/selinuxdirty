@@ -6,7 +6,7 @@
 #include <linux/cred.h>
 #include <linux/printk.h>
 #include <linux/errno.h>
-#include <linux/string.h>
+
 
 #define __GFP_DIRECT_RECLAIM 0x400u
 #define __GFP_KSWAPD_RECLAIM 0x800u
@@ -52,29 +52,10 @@ struct av_decision {
     u32 flags;
 };
 
-struct find_sym_data {
-    const char *name;
-    unsigned long addr;
-};
-
-static int find_sym_cb(void *data, const char *name, struct module *mod, unsigned long addr)
-{
-    struct find_sym_data *d = data;
-    if (strcmp(name, d->name) == 0) {
-        d->addr = addr;
-        return 1;
-    }
-    return 0;
-}
-
 static void *find_sym(const char *name)
 {
     unsigned long addr = kallsyms_lookup_name(name);
-    if (addr)
-        return (void *)addr;
-    struct find_sym_data data = { .name = name, .addr = 0 };
-    kallsyms_on_each_symbol(find_sym_cb, &data);
-    return (void *)data.addr;
+    return (void *)addr;
 }
 
 static void (*orig_security_compute_av)(u32 ssid, u32 tsid, u16 tclass,
@@ -129,7 +110,7 @@ static long execmem_hide_init(const char *args, const char *event,
 
     {
         const char *sys_ctx = "u:r:system_server:s0";
-        ret = fn_security_context_to_sid(sys_ctx, strlen(sys_ctx),
+        ret = fn_security_context_to_sid(sys_ctx, sizeof("u:r:system_server:s0") - 1,
                                           &system_server_sid, GFP_KERNEL);
         if (ret || !system_server_sid) {
             pr_err("[execmem-hide] SID resolution failed: %d\n", ret);
