@@ -1,12 +1,19 @@
 #include <compiler.h>
 #include <hook.h>
 #include <kpmodule.h>
-#include <linux/gfp.h>
-#include <linux/printk.h>
-#include <linux/string.h>
+#include <kallsyms.h>
+#include <ktypes.h>
+#include <linux/sched.h>
 #include <linux/cred.h>
-#include <linux/kallsyms.h>
+#include <linux/printk.h>
 #include <linux/errno.h>
+
+#define __GFP_DIRECT_RECLAIM 0x400u
+#define __GFP_KSWAPD_RECLAIM 0x800u
+#define __GFP_IO 0x40u
+#define __GFP_FS 0x80u
+#define __GFP_RECLAIM ((gfp_t)(__GFP_DIRECT_RECLAIM | __GFP_KSWAPD_RECLAIM))
+#define GFP_KERNEL ((gfp_t)(__GFP_RECLAIM | __GFP_IO | __GFP_FS))
 
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
@@ -30,17 +37,27 @@ static int (*fn_security_context_to_sid)(const char *scontext, u32 scontext_len,
 
 static u32 system_server_sid = 0;
 
+static uid_t get_current_uid(void)
+{
+    void *task;
+    void *cred;
+
+    __asm__ volatile("mrs %0, sp_el0" : "=r" (task));
+    cred = *(void **)((char *)task + task_struct_offset.cred_offset);
+    return *(uid_t *)((char *)cred + cred_offset.uid_offset);
+}
+
 static void hook_security_compute_av(u32 ssid, u32 tsid, u16 tclass,
                                        struct av_decision *avd)
 {
-    unsigned int uid;
+    uid_t uid;
 
     orig_security_compute_av(ssid, tsid, tclass, avd);
 
     if (!system_server_sid)
         return;
 
-    uid = current_uid().val;
+    uid = get_current_uid();
     if (uid < 10000)
         return;
 
