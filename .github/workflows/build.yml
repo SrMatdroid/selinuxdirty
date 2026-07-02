@@ -30,6 +30,15 @@ jobs:
           aarch64-linux-gnu-gcc -r -o out/selinux_execmem_hide.kpm selinux_execmem_hide.o
           rm selinux_execmem_hide.o
 
+      - name: Build test-kpm
+        run: |
+          aarch64-linux-gnu-gcc \
+            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
+            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
+            -c -o test_kpm.o test_kpm.c
+          aarch64-linux-gnu-gcc -r -o out/test_kpm.kpm test_kpm.o
+          rm test_kpm.o
+
       - name: Upload KPMs
         uses: actions/upload-artifact@v4
         with:
