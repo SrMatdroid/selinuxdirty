@@ -1,25 +1,40 @@
-// selinux-execmem-hide.kpm
+// SPDX-License-Identifier: GPL-3.0-only
+// KPM: selinux-execmem-hide
 // Hooks security_compute_av and clears execmem permissions for app processes
 // to hide dirty SELinux execmem rules from root detection.
 
-#include "kpmodule.h"
-#include "hook.h"
-#include "kputils.h"
-#include "log.h"
+#include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/kallsyms.h>
+#include <linux/sched.h>
+#include <linux/cred.h>
 #include <linux/gfp.h>
-#include <linux/string.h>
 
-KPM_NAME("selinux_execmem_hide");
-KPM_VERSION("1.0.0");
-KPM_AUTHOR("SrMatdroid");
-KPM_DESCRIPTION("Hides dirty execmem SELinux rules from app detection");
+// --- KPM API (without SDK headers, matches framework_spoof.c) ---
+#define KPM_NAME(name)          static const char kpm_name[] = name
+#define KPM_VERSION(ver)        static const char kpm_version[] = ver
+#define KPM_LICENSE(lic)        MODULE_LICENSE(lic)
+#define KPM_AUTHOR(auth)        MODULE_AUTHOR(auth)
+#define KPM_DESCRIPTION(desc)   MODULE_DESCRIPTION(desc)
 
-// GFP_KERNEL value for kernel 5.10
-// (__GFP_RECLAIM | __GFP_IO | __GFP_FS) = (0xC00 | 0x40 | 0x80) = 0xCC0
-#ifndef GFP_KERNEL
-#define GFP_KERNEL ((gfp_t)0xCC0)
-#endif
+#define KPM_INIT(f)             static int __init _kpm_init(void) { return f(NULL, NULL, NULL); } module_init(_kpm_init)
+#define KPM_EXIT(f)             static void __exit _kpm_exit(void) { f(NULL); } module_exit(_kpm_exit)
+
+typedef enum {
+    HOOK_NO_ERR = 0,
+} hook_err_t;
+
+typedef struct {
+    unsigned long arg0, arg1, arg2, arg3, arg4, arg5;
+} hook_fargs4_t;
+
+extern hook_err_t hook_wrap(void *func, int num_args,
+                            void *before, void *after, void *udata);
+extern void unhook_func(void *func);
+// --------------------------------------------------------------
+
+#define log_i(fmt, ...) printk(KERN_INFO "[execmem-hide] " fmt, ##__VA_ARGS__)
+#define log_e(fmt, ...) printk(KERN_ERR  "[execmem-hide][E] " fmt, ##__VA_ARGS__)
 
 struct av_decision {
     u32 allowed;
@@ -29,6 +44,7 @@ struct av_decision {
     u32 flags;
 };
 
+static int (*fn_sec_ctx_to_sid)(const char *, u32, u32 *, int);
 static u32 system_server_sid;
 
 static void after_security_compute_av(hook_fargs4_t *args, void *udata)
@@ -45,7 +61,7 @@ static void after_security_compute_av(hook_fargs4_t *args, void *udata)
     if (ssid != system_server_sid || tsid != system_server_sid)
         return;
 
-    uid = current_uid();
+    uid = current_uid().val;
     if (uid < 10000)
         return;
 
@@ -58,66 +74,55 @@ static void after_security_compute_av(hook_fargs4_t *args, void *udata)
 
 static long kpm_init(const char *args, const char *event, void *reserved)
 {
-    unsigned long sym;
+    void *sym;
     int ret;
     (void)args; (void)event; (void)reserved;
 
-    // Resolve security_context_to_sid
-    unsigned long (*sec_ctx_to_sid)(const char *, u32, u32 *, gfp_t);
-    sec_ctx_to_sid = (void *)kallsyms_lookup_name("security_context_to_sid");
-    if (!sec_ctx_to_sid) {
-        logke("security_context_to_sid not found\n");
+    fn_sec_ctx_to_sid = (void *)kallsyms_lookup_name("security_context_to_sid");
+    if (!fn_sec_ctx_to_sid) {
+        log_e("security_context_to_sid not found\n");
         return -1;
     }
 
-    {
-        const char *ctx = "u:r:system_server:s0";
-        ret = (int)sec_ctx_to_sid(ctx, 22, &system_server_sid, GFP_KERNEL);
-        if (ret || !system_server_sid) {
-            logke("SID resolution failed: %d\n", ret);
-            return -1;
-        }
+    ret = fn_sec_ctx_to_sid("u:r:system_server:s0", 22,
+                            &system_server_sid, GFP_KERNEL);
+    if (ret || !system_server_sid) {
+        log_e("SID resolution failed: %d\n", ret);
+        return -1;
     }
 
-    logki("system_server SID = %u\n", system_server_sid);
+    log_i("system_server SID = %u\n", system_server_sid);
 
-    // Resolve security_compute_av
-    sym = kallsyms_lookup_name("security_compute_av");
+    sym = (void *)kallsyms_lookup_name("security_compute_av");
     if (!sym) {
-        logke("security_compute_av not found\n");
+        log_e("security_compute_av not found\n");
         return -1;
     }
 
-    ret = (int)hook_wrap((void *)sym, 4, NULL, (void *)after_security_compute_av, NULL);
+    ret = (int)hook_wrap(sym, 4, NULL, (void *)after_security_compute_av, NULL);
     if (ret) {
-        logke("hook_wrap failed: %d\n", ret);
+        log_e("hook_wrap failed: %d\n", ret);
         return -1;
     }
 
-    logki("loaded\n");
+    log_i("loaded\n");
     return 0;
 }
 
 static long kpm_exit(void *reserved)
 {
-    unsigned long sym;
+    void *sym;
     (void)reserved;
-
-    sym = kallsyms_lookup_name("security_compute_av");
-    if (sym)
-        hook_unwrap((void *)sym, NULL, (void *)after_security_compute_av);
-
-    logki("unloaded\n");
+    sym = (void *)kallsyms_lookup_name("security_compute_av");
+    if (sym) unhook_func(sym);
+    log_i("unloaded\n");
     return 0;
 }
 
-// Control channel stub -- allows kpatch ctl to call without error
-static long kpm_ctl(const char *ctl_args, char *__user out_msg, int outlen)
-{
-    (void)ctl_args; (void)out_msg; (void)outlen;
-    return 0;
-}
-
+KPM_NAME("selinux_execmem_hide");
+KPM_VERSION("1.0.0");
+KPM_LICENSE("GPL");
+KPM_AUTHOR("SrMatdroid");
+KPM_DESCRIPTION("Hides dirty execmem SELinux rules from app detection");
 KPM_INIT(kpm_init);
-KPM_CTL0(kpm_ctl);
 KPM_EXIT(kpm_exit);
