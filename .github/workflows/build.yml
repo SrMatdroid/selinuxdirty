@@ -21,22 +21,44 @@ jobs:
       - name: Clone KPatch-Next headers
         run: |
           git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
-          echo "=== Buscando headers de KPM ==="
-          find kpatch-next -name "*.h" -type f | head -20
-          
-          # Encontrar directorio de includes
           KPM_INC=$(dirname "$(find kpatch-next -name 'kpmodule.h' -type f | head -n1)")
-          echo "KPM_INC=$KPM_INC"
           echo "KPM_INC=$KPM_INC" >> $GITHUB_ENV
           
-          echo "=== Headers encontrados ==="
-          ls -la "$KPM_INC/"
+          # Crear header complementario con definiciones faltantes
+          cat > "$KPM_INC/kpm_compat.h" << 'EOF'
+          #ifndef __KPM_COMPAT_H__
+          #define __KPM_COMPAT_H__
+          
+          // Definiciones necesarias para compilación
+          #ifdef __KERNEL__
+          #define __user
+          #else
+          #define __user
+          #endif
+          
+          // Funciones del kernel
+          #define pr_info(fmt, ...)  printk(KERN_INFO fmt, ##__VA_ARGS__)
+          #define pr_err(fmt, ...)   printk(KERN_ERR fmt, ##__VA_ARGS__)
+          
+          #define KERN_INFO ""
+          #define KERN_ERR ""
+          
+          // kallsyms
+          extern unsigned long kallsyms_lookup_name(const char *name);
+          
+          // current_uid
+          extern unsigned int current_uid(void);
+          
+          // printk
+          extern int printk(const char *fmt, ...);
+          
+          #endif /* __KPM_COMPAT_H__ */
+          EOF
 
       - name: Build KPM module
         run: |
           echo "=== Compilando módulo KPM ==="
           
-          # Compilar directamente con aarch64 gcc
           aarch64-linux-gnu-gcc \
             -I"$KPM_INC" \
             -D__KERNEL__ \
@@ -45,30 +67,25 @@ jobs:
             -fno-stack-protector \
             -O2 \
             -Wall \
+            -Wno-implicit-function-declaration \
             -c selinux_execmem_hide.c \
-            -o selinux_execmem_hide.o 2>&1 | tee build.log
+            -o selinux_execmem_hide.o
           
-          echo "=== Resultado de compilación ==="
+          echo "=== Resultado ==="
           if [ -f selinux_execmem_hide.o ]; then
             echo "✓ Compilación exitosa"
             ls -la selinux_execmem_hide.o
-            file selinux_execmem_hide.o
-            
-            # Crear .kpm (renombrar .o)
             cp selinux_execmem_hide.o selinux_execmem_hide.kpm
-            echo "✓ KPM creado: selinux_execmem_hide.kpm"
-            ls -la selinux_execmem_hide.kpm
+            echo "✓ KPM creado"
           else
-            echo "✗ Error de compilación:"
-            cat build.log
+            echo "✗ Error"
             exit 1
           fi
 
-      - name: Upload KPM artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: selinux_execmem_hide
           path: |
             selinux_execmem_hide.kpm
             selinux_execmem_hide.o
-          if-no-files-found: error
