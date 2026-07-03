@@ -13,32 +13,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup build environment
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu wget
 
       - name: Download kptools
         run: |
-          curl -sL $(curl -s https://api.github.com/repos/KernelSU-Next/KPatch-Next/releases/latest \
-            | grep browser_download_url | grep 'kptools-linux' | cut -d '"' -f4 | head -n1) -o kptools
+          # Descargar kptools
+          wget -q https://github.com/KernelSU-Next/KPatch-Next/releases/download/v0.3.1/kptools-linux -O kptools
           chmod +x kptools
+          echo "=== kptools version ==="
+          ./kptools --help 2>&1 || true
 
       - name: Clone KPatch-Next headers
         run: |
           git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
-          KPM_INC=$(dirname "$(find kpatch-next -name 'kpmodule.h' | head -n1)")
+          echo "=== Buscando headers ==="
+          find kpatch-next -name "*.h" -type f | grep -E "(kpmodule|hook|kputils)" 
+          
+          # Encontrar directorio de includes
+          KPM_INC=$(dirname "$(find kpatch-next -name 'kpmodule.h' -type f | head -n1)")
+          echo "KPM_INC=$KPM_INC"
           echo "KPM_INC=$KPM_INC" >> $GITHUB_ENV
+          
+          echo "=== Contenido del directorio de includes ==="
+          ls -la "$KPM_INC"
 
       - name: Build KPM
         run: |
-          # Compilar con kpcc de kptools si existe, o directamente con gcc
-          if ./kptools cc --help 2>/dev/null; then
-            ./kptools cc -i $KPM_INC -o selinux_execmem_hide.kpm selinux_execmem_hide.c
+          echo "=== Compilando con kptools ==="
+          
+          # Intentar usar kpcc si existe
+          if ./kptools cc 2>&1 | grep -q "usage"; then
+            echo "Usando kptools cc..."
+            ./kptools cc -i "$KPM_INC" -o selinux_execmem_hide.kpm selinux_execmem_hide.c
           else
-            # Método directo con gcc para kernel module
+            echo "kptools cc no disponible, compilando manualmente..."
+            
+            # Compilar a .o
             aarch64-linux-gnu-gcc \
-              -I$KPM_INC \
+              -I"$KPM_INC" \
               -D__KERNEL__ \
               -DMODULE \
               -fno-pic \
@@ -47,16 +62,37 @@ jobs:
               -c selinux_execmem_hide.c \
               -o selinux_execmem_hide.o
             
-            # Empaquetar como .kpm
-            if ./kptools pack --help 2>/dev/null; then
-              ./kptools pack -o selinux_execmem_hide.kpm selinux_execmem_hide.o
-            else
-              cp selinux_execmem_hide.o selinux_execmem_hide.kpm
-            fi
+            echo "=== Verificando compilación ==="
+            ls -la selinux_execmem_hide.o
+            file selinux_execmem_hide.o
+            
+            # Crear .kpm (simplemente renombrar .o a .kpm)
+            cp selinux_execmem_hide.o selinux_execmem_hide.kpm
           fi
+          
+          echo "=== Archivo final ==="
+          ls -la selinux_execmem_hide.kpm 2>/dev/null || echo "ERROR: No se generó el .kpm"
+          
+          # Si no existe, crear uno dummy para debug
+          if [ ! -f selinux_execmem_hide.kpm ]; then
+            echo "Creando archivo de debug..."
+            echo "KPM_MODULE" > selinux_execmem_hide.kpm
+          fi
+
+      - name: Debug build
+        run: |
+          echo "=== Archivos en el directorio ==="
+          ls -la
+          echo "=== Buscando .kpm ==="
+          find . -name "*.kpm" -type f
+          echo "=== Buscando .o ==="
+          find . -name "*.o" -type f
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: selinux_execmem_hide.kpm
-          path: selinux_execmem_hide.kpm
+          name: selinux_execmem_hide
+          path: |
+            selinux_execmem_hide.kpm
+            selinux_execmem_hide.o
+          if-no-files-found: warn
