@@ -66,14 +66,18 @@ static u32 system_server_sid;
 
 static void after_security_compute_av(hook_fargs4_t *args, void *udata)
 {
-    (void)udata;
-    u32 ssid = (u32)args->arg0;
-    u32 tsid = (u32)args->arg1;
+    u32 ssid;
+    u32 tsid;
     struct av_decision *avd;
     uid_t uid;
 
+    (void)udata;
+
     if (!system_server_sid)
         return;
+
+    ssid = (u32)args->arg0;
+    tsid = (u32)args->arg1;
 
     if (ssid != system_server_sid || tsid != system_server_sid)
         return;
