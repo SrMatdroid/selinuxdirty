@@ -1,32 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
-/*
- * KPM: selinux-execmem-hide
- * Hooks security_compute_av and clears execmem permissions for app processes
- * to hide dirty SELinux execmem rules from root detection.
- * 
- * Compatible with: APatch / KernelSU / Magisk with KPM support
- */
+// KPM: selinux-execmem-hide
+// Hooks security_compute_av and clears execmem permissions for app processes
+// to hide dirty SELinux execmem rules from root detection.
 
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/kallsyms.h>
 #include <linux/sched.h>
 #include <linux/cred.h>
-#include <linux/slab.h>
-#include <linux/version.h>
-#include <linux/printk.h>
+#include <linux/gfp.h>
 
-// ============================================================
-// KPM API Definitions
-// ============================================================
-#define KPM_NAME(name)          static const char __kpm_name[] __used = name
-#define KPM_VERSION(ver)        static const char __kpm_version[] __used = ver
+// --- KPM API (without SDK headers, matches framework_spoof.c) ---
+#define KPM_NAME(name)          static const char kpm_name[] = name
+#define KPM_VERSION(ver)        static const char kpm_version[] = ver
 #define KPM_LICENSE(lic)        MODULE_LICENSE(lic)
 #define KPM_AUTHOR(auth)        MODULE_AUTHOR(auth)
 #define KPM_DESCRIPTION(desc)   MODULE_DESCRIPTION(desc)
 
-#define KPM_INIT(f)             module_init(f)
-#define KPM_EXIT(f)             module_exit(f)
+#define KPM_INIT(f)             static int __init _kpm_init(void) { return f(NULL, NULL, NULL); } module_init(_kpm_init)
+#define KPM_EXIT(f)             static void __exit _kpm_exit(void) { f(NULL); } module_exit(_kpm_exit)
 
 typedef enum {
     HOOK_NO_ERR = 0,
@@ -36,147 +28,120 @@ typedef struct {
     unsigned long arg0, arg1, arg2, arg3, arg4, arg5;
 } hook_fargs4_t;
 
-// Funciones proporcionadas por el framework KPM
 extern hook_err_t hook_wrap(void *func, int num_args,
                             void *before, void *after, void *udata);
 extern void unhook_func(void *func);
-// ============================================================
+// --------------------------------------------------------------
 
-#define LOG_TAG "[execmem-hide] "
-#define log_i(fmt, ...) pr_info(LOG_TAG fmt, ##__VA_ARGS__)
-#define log_e(fmt, ...) pr_err(LOG_TAG "[E] " fmt, ##__VA_ARGS__)
-
-// Estructura de decisión AVC de SELinux
-struct av_decision {
-    u32 allowed;      // Permisos permitidos
-    u32 auditallow;   // Permisos a auditar (allow)
-    u32 auditdeny;    // Permisos a auditar (deny)
-    u32 seqno;        // Número de secuencia
-    u32 flags;        // Flags de decisión
+// --- KPatch-Next module info ---
+struct kpm_info {
+    const char *name;
+    const char *version;
+    const char *author;
+    const char *description;
 };
 
-// Variables globales
-static int (*fn_sec_ctx_to_sid)(const char *ctx, u32 ctxlen, u32 *sid, gfp_t gfp);
-static void *target_fn = NULL;  // security_compute_av
-static u32 system_server_sid = 0;
+static struct kpm_info kpm_info = {
+    .name = "selinux_execmem_hide",
+    .version = "1.0.0",
+    .author = "SrMatdroid",
+    .description = "Hides dirty execmem SELinux rules from app detection",
+};
+EXPORT_SYMBOL(kpm_info);
+// -------------------------------
 
-/**
- * after_security_compute_av - Hook que se ejecuta después de security_compute_av
- * 
- * Esta función intercepta las decisiones de SELinux y oculta los permisos
- * execmem para aplicaciones de usuario cuando system_server está involucrado.
- */
+#define log_i(fmt, ...) printk(KERN_INFO "[execmem-hide] " fmt, ##__VA_ARGS__)
+#define log_e(fmt, ...) printk(KERN_ERR  "[execmem-hide][E] " fmt, ##__VA_ARGS__)
+
+struct av_decision {
+    u32 allowed;
+    u32 auditallow;
+    u32 auditdeny;
+    u32 seqno;
+    u32 flags;
+};
+
+static int (*fn_sec_ctx_to_sid)(const char *, u32, u32 *, int);
+static u32 system_server_sid;
+
 static void after_security_compute_av(hook_fargs4_t *args, void *udata)
 {
-    u32 ssid, tsid;
+    (void)udata;
+    u32 ssid = (u32)args->arg0;
+    u32 tsid = (u32)args->arg1;
     struct av_decision *avd;
     uid_t uid;
-    
-    // Validaciones básicas
-    if (!args || !udata)
-        return;
-    
+
     if (!system_server_sid)
         return;
 
-    // Extraer SIDs de los argumentos
-    ssid = (u32)args->arg0;  // Source SID
-    tsid = (u32)args->arg1;  // Target SID
-
-    // Solo nos interesa cuando system_server está involucrado
     if (ssid != system_server_sid || tsid != system_server_sid)
         return;
 
-    // Solo para apps de usuario (UID >= 10000)
-    uid = __kuid_val(current_uid());
+    uid = current_uid().val;
     if (uid < 10000)
         return;
 
-    // Modificar la decisión de SELinux
     avd = (struct av_decision *)(unsigned long)args->arg3;
     if (avd) {
-        // Ocultar todos los permisos permitidos
         avd->allowed = 0;
         avd->auditallow = 0;
     }
 }
 
-/**
- * kpm_init - Punto de entrada del KPM
- */
-static int __init kpm_init(void)
+static long kpm_init(const char *args, const char *event, void *reserved)
 {
+    void *sym;
     int ret;
+    (void)args; (void)event; (void)reserved;
 
-    log_i("Initializing KPM: SELinux execmem hide\n");
-
-    // 1. Buscar función security_context_to_sid en el kernel
     fn_sec_ctx_to_sid = (void *)kallsyms_lookup_name("security_context_to_sid");
     if (!fn_sec_ctx_to_sid) {
-        log_e("Cannot find security_context_to_sid in kernel symbols\n");
-        return -ENOENT;
+        log_e("security_context_to_sid not found\n");
+        return -1;
     }
-    log_i("Found security_context_to_sid at %px\n", fn_sec_ctx_to_sid);
 
-    // 2. Buscar función security_compute_av en el kernel
-    target_fn = (void *)kallsyms_lookup_name("security_compute_av");
-    if (!target_fn) {
-        log_e("Cannot find security_compute_av in kernel symbols\n");
-        return -ENOENT;
-    }
-    log_i("Found security_compute_av at %px\n", target_fn);
-
-    // 3. Resolver el SID de system_server
     ret = fn_sec_ctx_to_sid("u:r:system_server:s0", 22,
                             &system_server_sid, GFP_KERNEL);
     if (ret || !system_server_sid) {
-        log_e("Failed to resolve system_server SID (ret=%d)\n", ret);
-        return -EINVAL;
+        log_e("SID resolution failed: %d\n", ret);
+        return -1;
     }
+
     log_i("system_server SID = %u\n", system_server_sid);
 
-    // 4. Instalar el hook
-    ret = (int)hook_wrap(target_fn, 4, NULL,  // before = NULL
-                         (void *)after_security_compute_av,  // after hook
-                         NULL);  // udata
-    if (ret) {
-        log_e("Failed to install hook (ret=%d)\n", ret);
-        system_server_sid = 0;
-        return -EINVAL;
+    sym = (void *)kallsyms_lookup_name("security_compute_av");
+    if (!sym) {
+        log_e("security_compute_av not found\n");
+        return -1;
     }
 
-    log_i("KPM loaded successfully!\n");
-    log_i("  - Target: security_compute_av\n");
-    log_i("  - system_server SID: %u\n", system_server_sid);
-    log_i("  - Effect: Hides execmem rules from apps\n");
-    
+    ret = (int)hook_wrap(sym, 4, NULL, (void *)after_security_compute_av, NULL);
+    if (ret) {
+        log_e("hook_wrap failed: %d\n", ret);
+        return -1;
+    }
+
+    log_i("loaded\n");
     return 0;
 }
 
-/**
- * kpm_exit - Punto de salida del KPM
- */
-static void __exit kpm_exit(void)
+static long kpm_exit(void *reserved)
 {
-    if (target_fn) {
-        unhook_func(target_fn);
-        log_i("Hook removed from security_compute_av\n");
-    }
-    
-    system_server_sid = 0;
-    log_i("KPM unloaded\n");
+    void *sym;
+    (void)reserved;
+    sym = (void *)kallsyms_lookup_name("security_compute_av");
+    if (sym) unhook_func(sym);
+    log_i("unloaded\n");
+    return 0;
 }
 
-// Registro del módulo
-module_init(kpm_init);
-module_exit(kpm_exit);
-
-// Metadata del KPM
 KPM_NAME("selinux_execmem_hide");
 KPM_VERSION("1.0.0");
 KPM_LICENSE("GPL");
 KPM_AUTHOR("SrMatdroid");
-KPM_DESCRIPTION("Hides dirty execmem SELinux rules from app detection by hooking security_compute_av");
+KPM_DESCRIPTION("Hides dirty execmem SELinux rules from app detection");
+KPM_INIT(kpm_init);
+KPM_EXIT(kpm_exit);
 
 MODULE_INFO(kpm_module, "1");
-MODULE_INFO(compatibility, "apatch-kernel-5.10+");
