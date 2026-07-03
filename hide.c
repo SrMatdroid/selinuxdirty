@@ -1,7 +1,6 @@
 #include <kpmodule.h>
 #include <hook.h>
 
-#define NULL ((void*)0)
 #define ENOENT 2
 #define EACCES 13
 
@@ -13,14 +12,6 @@ static int strcmp(const char *a, const char *b)
     return *a - *b;
 }
 
-struct task_struct {
-    void *cred;
-};
-
-struct cred {
-    unsigned int val;
-};
-
 /* HOOK 1 */
 int security_getprocattr(void *p, char *name, char **value);
 static int (*orig_getprocattr)(void *p, char *name, char **value);
@@ -28,9 +19,8 @@ static int (*orig_getprocattr)(void *p, char *name, char **value);
 static int hooked_getprocattr(void *p, char *name, char **value)
 {
     if (name && strcmp(name, "current") == 0) {
-        struct task_struct *t = p;
-        struct cred *c = t ? t->cred : 0;
-        if (c && c->val == 0) {
+        unsigned int *cred_ptr = p ? *(unsigned int **)p : 0;
+        if (cred_ptr && *cred_ptr == 0) {
             *value = "u:r:untrusted_app:s0:c512,c768";
             return 32;
         }
@@ -83,44 +73,43 @@ static int hooked_setprocattr(const char *name, char *value, unsigned long size)
 }
 
 /* INIT/EXIT */
+static int install_hook(const char *sym, void *hooked, void **orig, int *count,
+                        struct hook **hooks)
+{
+    struct hook *h = &(*hooks)[*count];
+    h->name = sym;
+    h->target = (void *)kallsyms_lookup_name(sym);
+    if (!h->target)
+        return -ENOENT;
+    h->hook = hooked;
+    h->orig = orig;
+    *count = *count + 1;
+    return hook_install(h);
+}
+
 static struct hook hooks[4];
 static int hook_count = 0;
 
-static int install_hook(const char *sym, void *hooked, void **orig, int idx)
+static int hide_init(void)
 {
-    hooks[idx].target = (void *)kallsyms_lookup_name(sym);
-    if (!hooks[idx].target)
-        return -ENOENT;
-    hooks[idx].hook = hooked;
-    hooks[idx].orig = orig;
-    return hook_install(&hooks[idx]);
-}
-
-static int __init hide_init(void)
-{
-    if (install_hook("security_getprocattr", hooked_getprocattr, &orig_getprocattr, 0) == 0)
-        hook_count++;
-    if (install_hook("avc_denied", hooked_avc_denied, &orig_avc_denied, 1) == 0)
-        hook_count++;
-    if (install_hook("avc_has_perm", hooked_avc_has_perm, &orig_avc_has_perm, 2) == 0)
-        hook_count++;
-    if (install_hook("security_setprocattr", hooked_setprocattr, &orig_setprocattr, 3) == 0)
-        hook_count++;
+    if (install_hook("security_getprocattr", hooked_getprocattr, &orig_getprocattr, &hook_count, &hooks) == 0) {}
+    if (install_hook("avc_denied", hooked_avc_denied, &orig_avc_denied, &hook_count, &hooks) == 0) {}
+    if (install_hook("avc_has_perm", hooked_avc_has_perm, &orig_avc_has_perm, &hook_count, &hooks) == 0) {}
+    if (install_hook("security_setprocattr", hooked_setprocattr, &orig_setprocattr, &hook_count, &hooks) == 0) {}
     return 0;
 }
 
-static void __exit hide_exit(void)
+static void hide_exit(void)
 {
     int i;
     for (i = 0; i < hook_count; i++)
         hook_uninstall(&hooks[i]);
 }
 
-static struct kpmodule hide_module = {
-    .name = "hide",
-    .version = "1.0",
-    .init = hide_init,
-    .exit = hide_exit,
-};
-
-KPM_MODULE(hide_module);
+KPM_NAME("hide");
+KPM_VERSION("1.0");
+KPM_LICENSE("GPL");
+KPM_AUTHOR("hide");
+KPM_DESCRIPTION("hide");
+KPM_INIT(hide_init);
+KPM_EXIT(hide_exit);
