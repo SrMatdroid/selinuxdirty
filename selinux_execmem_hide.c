@@ -7,7 +7,6 @@
 #include <linux/printk.h>
 #include <linux/errno.h>
 
-
 #define __GFP_DIRECT_RECLAIM 0x400u
 #define __GFP_KSWAPD_RECLAIM 0x800u
 #define __GFP_IO 0x40u
@@ -24,12 +23,13 @@ struct task_struct_offset {
     int16_t ptracer_cred_offset;
     int16_t real_cred_offset;
     int16_t cred_offset;
+    int16_t comm_offset;
     int16_t fs_offset;
     int16_t files_offset;
     int16_t loginuid_offset;
     int16_t sessionid_offset;
-    int16_t comm_offset;
     int16_t seccomp_offset;
+    int16_t security_offset;
     int16_t stack_offset;
     int16_t tasks_offset;
     int16_t mm_offset;
@@ -37,6 +37,10 @@ struct task_struct_offset {
 };
 
 extern struct task_struct_offset task_struct_offset;
+
+extern int (*kallsyms_on_each_symbol)(int (*fn)(void *data, const char *name,
+                                                 void *module, unsigned long addr),
+                                      void *data);
 
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
@@ -52,10 +56,42 @@ struct av_decision {
     u32 flags;
 };
 
+struct find_sym_data {
+    const char *name;
+    void *addr;
+};
+
+static int sym_name_cmp(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
+static int find_sym_cb(void *data, const char *name, void *mod, unsigned long addr)
+{
+    struct find_sym_data *d = data;
+    if (!sym_name_cmp(name, d->name)) {
+        d->addr = (void *)addr;
+        return 1;
+    }
+    return 0;
+}
+
 static void *find_sym(const char *name)
 {
-    unsigned long addr = kallsyms_lookup_name(name);
-    return (void *)addr;
+    unsigned long addr;
+
+    addr = kallsyms_lookup_name(name);
+    if (addr)
+        return (void *)addr;
+
+    if (kallsyms_on_each_symbol) {
+        struct find_sym_data data = { .name = name, .addr = NULL };
+        kallsyms_on_each_symbol(find_sym_cb, &data);
+        return data.addr;
+    }
+
+    return NULL;
 }
 
 static void (*orig_security_compute_av)(u32 ssid, u32 tsid, u16 tclass,
