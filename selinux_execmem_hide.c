@@ -38,10 +38,6 @@ struct task_struct_offset {
 
 extern struct task_struct_offset task_struct_offset;
 
-extern int (*kallsyms_on_each_symbol)(int (*fn)(void *data, const char *name,
-                                                 void *module, unsigned long addr),
-                                      void *data);
-
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
 KPM_LICENSE("GPL v3");
