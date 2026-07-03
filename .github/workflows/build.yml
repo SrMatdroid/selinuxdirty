@@ -18,35 +18,44 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu flex bison bc
 
-      - name: Get kernel headers (5.10 - Android GKI)
+      - name: Get kernel headers (Android 5.10)
         run: |
-          # Usar el tag específico de Android 12/13 para kernel 5.10
-          git clone --depth 1 --branch android12-5.10-2022-12 \
+          # Primero, veamos qué ramas existen
+          git ls-remote --heads https://android.googlesource.com/kernel/common.git | grep android12-5.10 || true
+          # Usamos la rama principal android12-5.10 que siempre existe
+          git clone --depth 1 --branch android12-5.10 \
             https://android.googlesource.com/kernel/common.git kernel-headers
+          
+      - name: Prepare kernel headers
+        run: |
           cd kernel-headers
-          # Configurar para GKI
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
-      - name: Build module
+      - name: Build KPM module
         run: |
+          # Crear Makefile simple
           cat > Makefile <<'EOF'
           ifneq ($(KERNELRELEASE),)
           obj-m := selinux_execmem_hide.o
-          ccflags-y := -D__KERNEL__ -DMODULE
+          ccflags-y := -I$(src)
           else
           KDIR := $(CURDIR)/kernel-headers
-          PWD := $(CURDIR)
           
-          all:
-          	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(PWD) modules
+          default:
+          	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(CURDIR) modules
           
           clean:
-          	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(PWD) clean
+          	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(CURDIR) clean
           endif
           EOF
           
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+
+      - name: Check built module
+        run: |
+          file selinux_execmem_hide.ko
+          ls -la selinux_execmem_hide.ko
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
