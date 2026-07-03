@@ -1,6 +1,5 @@
 #include <kpmodule.h>
 #include <hook.h>
-#include <linux/string.h>
 #include <linux/cred.h>
 #include <asm/current.h>
 #include <uapi/asm-generic/errno.h>
@@ -8,6 +7,13 @@
 #define NULL ((void*)0)
 
 extern unsigned long kallsyms_lookup_name(const char *name);
+
+/* strcmp manual */
+static int strcmp(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a - *b;
+}
 
 /* ============================================================
  * HOOK 1: security_getprocattr - oculta contextos KSU/Magisk
@@ -87,7 +93,7 @@ static int install_hook(const char *sym, void *hooked, void **orig, int idx)
 {
     hooks[idx].target = (void *)kallsyms_lookup_name(sym);
     if (!hooks[idx].target)
-        return -ENOENT;
+        return -13;
     hooks[idx].hook = hooked;
     hooks[idx].orig = orig;
     return hook_install(&hooks[idx]);
