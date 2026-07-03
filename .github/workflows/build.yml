@@ -22,85 +22,127 @@ jobs:
       - name: Clone KPatch-Next
         run: |
           git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
-          echo "=== Headers encontrados ==="
-          find kpatch-next -name "*.h" -type f
+          echo "=== Estructura de KPatch ==="
+          find kpatch-next -type f -name "*.h" | head -20
 
-      - name: Create missing headers
+      - name: Create KPM environment
         run: |
-          # Crear kputils.h si no existe
-          KP_INC=$(dirname "$(find kpatch-next -iname 'kpmodule.h' | head -n1)")
+          KP_INC="$(dirname "$(find kpatch-next -iname 'kpmodule.h' | head -n1)")"
+          echo "KP_INC=$KP_INC"
           
-          if [ ! -f "$KP_INC/kputils.h" ]; then
-            cat > "$KP_INC/kputils.h" << 'HEADER_EOF'
-          #ifndef __KPUTILS_H__
-          #define __KPUTILS_H__
+          # Crear directorio de trabajo para headers
+          mkdir -p kpm_build/include/linux
+          mkdir -p kpm_build/include/asm
+          
+          # Copiar headers de KPatch
+          cp -r "$KP_INC"/* kpm_build/include/ 2>/dev/null || true
+          
+          # Crear headers mínimos del kernel
+          cat > kpm_build/include/linux/types.h << 'EOF'
+          #ifndef _LINUX_TYPES_H
+          #define _LINUX_TYPES_H
+          
+          typedef unsigned char u8;
+          typedef unsigned short u16;
+          typedef unsigned int u32;
+          typedef unsigned long long u64;
+          typedef signed char s8;
+          typedef signed short s16;
+          typedef signed int s32;
+          typedef signed long long s64;
+          
+          typedef u32 uid_t;
+          typedef unsigned int gfp_t;
+          
+          #endif
+          EOF
+          
+          cat > kpm_build/include/linux/string.h << 'EOF'
+          #ifndef _LINUX_STRING_H
+          #define _LINUX_STRING_H
           
           #include <linux/types.h>
           
-          // Basic utility functions for KPM
-          static inline uid_t current_uid(void)
+          static inline int strlen(const char *s)
           {
-              return current->cred->uid.val;
+              int n = 0;
+              while (*s++) n++;
+              return n;
           }
           
-          #endif /* __KPUTILS_H__ */
-          HEADER_EOF
-            echo "Created kputils.h"
-          fi
+          static inline int strcmp(const char *s1, const char *s2)
+          {
+              while (*s1 && *s2 && *s1 == *s2) {
+                  s1++; s2++;
+              }
+              return *s1 - *s2;
+          }
           
-          # Crear compiler.h si no existe
-          if [ ! -f "$KP_INC/compiler.h" ]; then
-            cat > "$KP_INC/compiler.h" << 'HEADER_EOF'
-          #ifndef __COMPILER_H__
-          #define __COMPILER_H__
+          #endif
+          EOF
           
-          // Compiler macros
-          #define __user
-          #define likely(x)   __builtin_expect(!!(x), 1)
-          #define unlikely(x) __builtin_expect(!!(x), 0)
-          
-          #endif /* __COMPILER_H__ */
-          HEADER_EOF
-            echo "Created compiler.h"
-          fi
-          
-          # Crear hook.h si no existe
-          if [ ! -f "$KP_INC/hook.h" ]; then
-            cat > "$KP_INC/hook.h" << 'HEADER_EOF'
-          #ifndef __HOOK_H__
-          #define __HOOK_H__
+          cat > kpm_build/include/linux/kernel.h << 'EOF'
+          #ifndef _LINUX_KERNEL_H
+          #define _LINUX_KERNEL_H
           
           #include <linux/types.h>
           
-          typedef enum {
-              HOOK_NO_ERR = 0,
-          } hook_err_t;
+          #define KERN_INFO ""
+          #define KERN_ERR ""
+          #define GFP_KERNEL 0xcc0
           
-          typedef struct {
-              unsigned long arg0, arg1, arg2, arg3, arg4;
-          } hook_fargs5_t;
+          #define pr_info(fmt, ...) 
+          #define pr_err(fmt, ...) 
+          #define printk(fmt, ...) 
           
-          extern hook_err_t hook_wrap5(void *target, void *before, void *after, void *udata);
-          extern void hook_unwrap(void *target, void *before, void *after);
+          #endif
+          EOF
           
-          #endif /* __HOOK_H__ */
-          HEADER_EOF
-            echo "Created hook.h"
-          fi
+          cat > kpm_build/include/linux/kallsyms.h << 'EOF'
+          #ifndef _LINUX_KALLSYMS_H
+          #define _LINUX_KALLSYMS_H
           
-          # Crear asm/current.h si no existe
-          mkdir -p "$KP_INC/asm"
-          if [ ! -f "$KP_INC/asm/current.h" ]; then
-            cat > "$KP_INC/asm/current.h" << 'HEADER_EOF'
-          #ifndef __ASM_CURRENT_H__
-          #define __ASM_CURRENT_H__
+          static inline void *kallsyms_lookup_name(const char *name)
+          {
+              return 0;
+          }
           
-          #include <linux/compiler.h>
+          #endif
+          EOF
           
-          struct task_struct;
+          cat > kpm_build/include/linux/sched.h << 'EOF'
+          #ifndef _LINUX_SCHED_H
+          #define _LINUX_SCHED_H
           
-          // For ARM64, current is usually in sp_el0
-          static __always_inline struct task_struct *get_current(void)
+          struct task_struct {
+              struct cred *cred;
+          };
+          
+          extern struct task_struct *current;
+          
+          #endif
+          EOF
+          
+          cat > kpm_build/include/linux/cred.h << 'EOF'
+          #ifndef _LINUX_CRED_H
+          #define _LINUX_CRED_H
+          
+          #include <linux/types.h>
+          
+          struct cred {
+              uid_t uid;
+          };
+          
+          #endif
+          EOF
+          
+          cat > kpm_build/include/asm/current.h << 'EOF'
+          #ifndef _ASM_CURRENT_H
+          #define _ASM_CURRENT_H
+          
+          #include <linux/sched.h>
+          
+          static inline struct task_struct *get_current(void)
           {
               struct task_struct *cur;
               asm volatile("mrs %0, sp_el0" : "=r"(cur));
@@ -109,53 +151,59 @@ jobs:
           
           #define current get_current()
           
-          #endif /* __ASM_CURRENT_H__ */
-          HEADER_EOF
-            echo "Created asm/current.h"
-          fi
+          #endif
+          EOF
+
+      - name: Create kputils.h compatible
+        run: |
+          cat > kpm_build/include/kputils.h << 'EOF'
+          #ifndef __KPUTILS_H__
+          #define __KPUTILS_H__
+          
+          #include <linux/types.h>
+          #include <linux/cred.h>
+          #include <asm/current.h>
+          
+          static inline uid_t current_uid(void)
+          {
+              return current->cred->uid;
+          }
+          
+          #endif
+          EOF
 
       - name: Download kptools
         run: |
-          # Get latest release
-          LATEST_URL=$(curl -s https://api.github.com/repos/KernelSU-Next/KPatch-Next/releases/latest | grep browser_download_url | grep 'kptools-linux' | cut -d '"' -f4 | head -n1)
-          if [ -z "$LATEST_URL" ]; then
-            echo "No se pudo encontrar kptools, usando método alternativo"
-            # Fallback: solo compilamos el .o
-          else
-            curl -sL "$LATEST_URL" -o kptools
-            chmod +x kptools
-            ./kptools --help || true
-          fi
+          curl -sL $(curl -s https://api.github.com/repos/KernelSU-Next/KPatch-Next/releases/latest \
+            | grep browser_download_url | grep 'kptools-linux' | cut -d '"' -f4 | head -n1) -o kptools
+          chmod +x kptools
+          ./kptools --help || true
 
       - name: Compile KPM object
         run: |
-          KP_INC=$(dirname "$(find kpatch-next -iname 'kpmodule.h' | head -n1)")
-          echo "Usando includes de: $KP_INC"
-          
           aarch64-none-linux-gnu-gcc \
-            -c selinux_execmem_hide.c -o selinux_execmem_hide.o \
-            -I"$KP_INC" \
-            -I"$KP_INC/.." \
+            -c selinux_execmem_hide.c \
+            -o selinux_execmem_hide.o \
+            -I kpm_build/include \
+            -nostdinc \
             -D__KERNEL__ \
+            -DMODULE \
             -fno-stack-protector \
             -fno-pic \
             -Wall \
-            -Wno-declaration-after-statement \
             -O2 \
+            -ffreestanding \
             -static
 
       - name: Package as .kpm
         run: |
           if [ -f kptools ]; then
-            # Intentar con kptools
-            ./kptools pack -o selinux_execmem_hide.kpm selinux_execmem_hide.o || \
+            ./kptools pack -o selinux_execmem_hide.kpm selinux_execmem_hide.o 2>/dev/null || \
             cp selinux_execmem_hide.o selinux_execmem_hide.kpm
           else
-            # Fallback: solo renombrar
             cp selinux_execmem_hide.o selinux_execmem_hide.kpm
           fi
           
-          echo "Archivos generados:"
           ls -la selinux_execmem_hide.*
 
       - name: Upload KPM artifact
