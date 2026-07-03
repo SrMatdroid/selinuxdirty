@@ -1,7 +1,5 @@
 #include <kpmodule.h>
 #include <hook.h>
-#include <linux/cred.h>
-#include <asm/current.h>
 #include <uapi/asm-generic/errno.h>
 
 #define NULL ((void*)0)
@@ -18,14 +16,22 @@ static int strcmp(const char *a, const char *b)
 /* ============================================================
  * HOOK 1: security_getprocattr - oculta contextos KSU/Magisk
  * ============================================================ */
-struct task_struct;
+struct task_struct {
+    void *cred;
+};
+
+struct cred {
+    unsigned int val;
+};
+
 int security_getprocattr(struct task_struct *p, char *name, char **value);
 static int (*orig_getprocattr)(struct task_struct *p, char *name, char **value);
 
 static int hooked_getprocattr(struct task_struct *p, char *name, char **value)
 {
     if (name && strcmp(name, "current") == 0) {
-        if (p && p->cred && p->cred->uid.val == 0) {
+        struct cred *c = (struct cred *)p->cred;
+        if (c && c->val == 0) {
             *value = "u:r:untrusted_app:s0:c512,c768";
             return 32;
         }
