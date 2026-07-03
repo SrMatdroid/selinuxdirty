@@ -65,31 +65,27 @@ static long execmem_hide_init(const char *args, const char *event,
                               u32 *out_sid, gfp_t gfp);
     int ret;
 
-    // Buscar función security_context_to_sid
     fn_sec_ctx_to_sid = (void *)kallsyms_lookup_name("security_context_to_sid");
     if (!fn_sec_ctx_to_sid) {
         pr_err("[execmem-hide] security_context_to_sid not found\n");
-        return -2;  // ENOENT
+        return -2;
     }
 
-    // Resolver SID de system_server
     ret = fn_sec_ctx_to_sid(sys_ctx, strlen(sys_ctx),
                              &system_server_sid, GFP_KERNEL);
     if (ret || !system_server_sid) {
         pr_err("[execmem-hide] Failed to resolve system_server SID: %d\n", ret);
-        return -22;  // EINVAL
+        return -22;
     }
 
     pr_info("[execmem-hide] system_server SID = %u\n", system_server_sid);
 
-    // Buscar función security_compute_av
     g_security_compute_av_addr = (void *)kallsyms_lookup_name("security_compute_av");
     if (!g_security_compute_av_addr) {
         pr_err("[execmem-hide] security_compute_av not found\n");
         return -2;
     }
 
-    // Instalar hook (5 argumentos: ssid, tsid, tclass, avd, xperms)
     err = hook_wrap5(g_security_compute_av_addr,
                       NULL, after_security_compute_av, NULL);
     if (err != HOOK_NO_ERR) {
