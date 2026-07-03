@@ -1,7 +1,6 @@
 #include <kpmodule.h>
 #include <hook.h>
 
-#define ENOENT 2
 #define EACCES 13
 
 extern unsigned long kallsyms_lookup_name(const char *name);
@@ -12,15 +11,17 @@ static int strcmp(const char *a, const char *b)
     return *a - *b;
 }
 
-/* HOOK 1 */
-int security_getprocattr(void *p, char *name, char **value);
+/* ============================================================
+ * HOOK 1: security_getprocattr
+ * ============================================================ */
 static int (*orig_getprocattr)(void *p, char *name, char **value);
 
 static int hooked_getprocattr(void *p, char *name, char **value)
 {
     if (name && strcmp(name, "current") == 0) {
-        unsigned int *cred_ptr = p ? *(unsigned int **)p : 0;
-        if (cred_ptr && *cred_ptr == 0) {
+        /* p apunta a task_struct; cred está en el offset 0x0 (primer campo) */
+        unsigned int *cred = *(unsigned int **)p;
+        if (cred && *cred == 0) { /* uid 0 */
             *value = "u:r:untrusted_app:s0:c512,c768";
             return 32;
         }
@@ -28,9 +29,9 @@ static int hooked_getprocattr(void *p, char *name, char **value)
     return orig_getprocattr(p, name, value);
 }
 
-/* HOOK 2 */
-void avc_denied(unsigned int ssid, unsigned int tsid, unsigned short tclass,
-                unsigned int requested, void *avd);
+/* ============================================================
+ * HOOK 2: avc_denied
+ * ============================================================ */
 static void (*orig_avc_denied)(unsigned int ssid, unsigned int tsid,
                                 unsigned short tclass, unsigned int requested,
                                 void *avd);
@@ -47,9 +48,9 @@ static void hooked_avc_denied(unsigned int ssid, unsigned int tsid,
     orig_avc_denied(ssid, tsid, tclass, requested, avd);
 }
 
-/* HOOK 3 */
-int avc_has_perm(unsigned int ssid, unsigned int tsid, unsigned short tclass,
-                 unsigned int requested, void *avd);
+/* ============================================================
+ * HOOK 3: avc_has_perm
+ * ============================================================ */
 static int (*orig_avc_has_perm)(unsigned int ssid, unsigned int tsid,
                                  unsigned short tclass, unsigned int requested,
                                  void *avd);
@@ -63,8 +64,9 @@ static int hooked_avc_has_perm(unsigned int ssid, unsigned int tsid,
     return orig_avc_has_perm(ssid, tsid, tclass, requested, avd);
 }
 
-/* HOOK 4 */
-int security_setprocattr(const char *name, char *value, unsigned long size);
+/* ============================================================
+ * HOOK 4: security_setprocattr
+ * ============================================================ */
 static int (*orig_setprocattr)(const char *name, char *value, unsigned long size);
 
 static int hooked_setprocattr(const char *name, char *value, unsigned long size)
@@ -72,30 +74,54 @@ static int hooked_setprocattr(const char *name, char *value, unsigned long size)
     return orig_setprocattr(name, value, size);
 }
 
-/* INIT/EXIT */
-static int install_hook(const char *sym, void *hooked, void **orig, int *count,
-                        struct hook **hooks)
-{
-    struct hook *h = &(*hooks)[*count];
-    h->name = sym;
-    h->target = (void *)kallsyms_lookup_name(sym);
-    if (!h->target)
-        return -ENOENT;
-    h->hook = hooked;
-    h->orig = orig;
-    *count = *count + 1;
-    return hook_install(h);
-}
-
-static struct hook hooks[4];
+/* ============================================================
+ * Gestión de hooks
+ * ============================================================ */
+static hook_t hooks[4];
 static int hook_count = 0;
 
 static int hide_init(void)
 {
-    if (install_hook("security_getprocattr", hooked_getprocattr, &orig_getprocattr, &hook_count, &hooks) == 0) {}
-    if (install_hook("avc_denied", hooked_avc_denied, &orig_avc_denied, &hook_count, &hooks) == 0) {}
-    if (install_hook("avc_has_perm", hooked_avc_has_perm, &orig_avc_has_perm, &hook_count, &hooks) == 0) {}
-    if (install_hook("security_setprocattr", hooked_setprocattr, &orig_setprocattr, &hook_count, &hooks) == 0) {}
+    /* security_getprocattr */
+    hooks[0].name = "security_getprocattr";
+    hooks[0].target = (void *)kallsyms_lookup_name("security_getprocattr");
+    hooks[0].hook = hooked_getprocattr;
+    hooks[0].orig = &orig_getprocattr;
+    if (hooks[0].target) {
+        hook_install(&hooks[0]);
+        hook_count++;
+    }
+
+    /* avc_denied */
+    hooks[1].name = "avc_denied";
+    hooks[1].target = (void *)kallsyms_lookup_name("avc_denied");
+    hooks[1].hook = hooked_avc_denied;
+    hooks[1].orig = &orig_avc_denied;
+    if (hooks[1].target) {
+        hook_install(&hooks[1]);
+        hook_count++;
+    }
+
+    /* avc_has_perm */
+    hooks[2].name = "avc_has_perm";
+    hooks[2].target = (void *)kallsyms_lookup_name("avc_has_perm");
+    hooks[2].hook = hooked_avc_has_perm;
+    hooks[2].orig = &orig_avc_has_perm;
+    if (hooks[2].target) {
+        hook_install(&hooks[2]);
+        hook_count++;
+    }
+
+    /* security_setprocattr */
+    hooks[3].name = "security_setprocattr";
+    hooks[3].target = (void *)kallsyms_lookup_name("security_setprocattr");
+    hooks[3].hook = hooked_setprocattr;
+    hooks[3].orig = &orig_setprocattr;
+    if (hooks[3].target) {
+        hook_install(&hooks[3]);
+        hook_count++;
+    }
+
     return 0;
 }
 
