@@ -38,6 +38,8 @@ struct task_struct_offset {
 
 extern struct task_struct_offset task_struct_offset;
 
+struct module;
+
 KPM_NAME("selinux-execmem-hide");
 KPM_VERSION("1.0.0");
 KPM_LICENSE("GPL v3");
@@ -63,7 +65,7 @@ static int sym_name_cmp(const char *a, const char *b)
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-static int find_sym_cb(void *data, const char *name, void *mod, unsigned long addr)
+static int find_sym_cb(void *data, const char *name, struct module *mod, unsigned long addr)
 {
     struct find_sym_data *d = data;
     if (!sym_name_cmp(name, d->name)) {
