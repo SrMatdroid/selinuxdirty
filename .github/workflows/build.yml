@@ -22,70 +22,25 @@ jobs:
       - name: Clone KPatch-Next
         run: |
           git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
-          echo "=== Estructura de KPatch ==="
-          find kpatch-next -type f -name "*.h" | head -20
+          echo "=== Headers de KPatch ==="
+          find kpatch-next -name "*.h" -type f
 
       - name: Create KPM environment
         run: |
           KP_INC="$(dirname "$(find kpatch-next -iname 'kpmodule.h' | head -n1)")"
           echo "KP_INC=$KP_INC"
           
-          # Crear directorio de trabajo para headers
+          # Directorio de trabajo
           mkdir -p kpm_build/include/linux
           mkdir -p kpm_build/include/asm
           
           # Copiar headers de KPatch
-          cp -r "$KP_INC"/* kpm_build/include/ 2>/dev/null || true
+          cp "$KP_INC"/*.h kpm_build/include/ 2>/dev/null || true
           
-          # Crear headers mínimos del kernel
-          cat > kpm_build/include/linux/types.h << 'EOF'
-          #ifndef _LINUX_TYPES_H
-          #define _LINUX_TYPES_H
-          
-          typedef unsigned char u8;
-          typedef unsigned short u16;
-          typedef unsigned int u32;
-          typedef unsigned long long u64;
-          typedef signed char s8;
-          typedef signed short s16;
-          typedef signed int s32;
-          typedef signed long long s64;
-          
-          typedef u32 uid_t;
-          typedef unsigned int gfp_t;
-          
-          #endif
-          EOF
-          
-          cat > kpm_build/include/linux/string.h << 'EOF'
-          #ifndef _LINUX_STRING_H
-          #define _LINUX_STRING_H
-          
-          #include <linux/types.h>
-          
-          static inline int strlen(const char *s)
-          {
-              int n = 0;
-              while (*s++) n++;
-              return n;
-          }
-          
-          static inline int strcmp(const char *s1, const char *s2)
-          {
-              while (*s1 && *s2 && *s1 == *s2) {
-                  s1++; s2++;
-              }
-              return *s1 - *s2;
-          }
-          
-          #endif
-          EOF
-          
+          # Crear solo los headers mínimos que KPatch NO proporciona
           cat > kpm_build/include/linux/kernel.h << 'EOF'
           #ifndef _LINUX_KERNEL_H
           #define _LINUX_KERNEL_H
-          
-          #include <linux/types.h>
           
           #define KERN_INFO ""
           #define KERN_ERR ""
@@ -94,6 +49,23 @@ jobs:
           #define pr_info(fmt, ...) 
           #define pr_err(fmt, ...) 
           #define printk(fmt, ...) 
+          
+          #endif
+          EOF
+          
+          cat > kpm_build/include/linux/string.h << 'EOF'
+          #ifndef _LINUX_STRING_H
+          #define _LINUX_STRING_H
+          
+          static inline int strlen(const char *s)
+          {
+              int n = 0;
+              while (*s && *s != '\0') {
+                  n++;
+                  s++;
+              }
+              return n;
+          }
           
           #endif
           EOF
@@ -114,11 +86,7 @@ jobs:
           #ifndef _LINUX_SCHED_H
           #define _LINUX_SCHED_H
           
-          struct task_struct {
-              struct cred *cred;
-          };
-          
-          extern struct task_struct *current;
+          struct task_struct;
           
           #endif
           EOF
@@ -127,7 +95,7 @@ jobs:
           #ifndef _LINUX_CRED_H
           #define _LINUX_CRED_H
           
-          #include <linux/types.h>
+          typedef unsigned int uid_t;
           
           struct cred {
               uid_t uid;
@@ -140,7 +108,7 @@ jobs:
           #ifndef _ASM_CURRENT_H
           #define _ASM_CURRENT_H
           
-          #include <linux/sched.h>
+          struct task_struct;
           
           static inline struct task_struct *get_current(void)
           {
@@ -153,14 +121,12 @@ jobs:
           
           #endif
           EOF
-
-      - name: Create kputils.h compatible
-        run: |
+          
+          # kputils.h que usa los tipos de KPatch
           cat > kpm_build/include/kputils.h << 'EOF'
           #ifndef __KPUTILS_H__
           #define __KPUTILS_H__
           
-          #include <linux/types.h>
           #include <linux/cred.h>
           #include <asm/current.h>
           
@@ -192,8 +158,7 @@ jobs:
             -fno-pic \
             -Wall \
             -O2 \
-            -ffreestanding \
-            -static
+            -ffreestanding
 
       - name: Package as .kpm
         run: |
