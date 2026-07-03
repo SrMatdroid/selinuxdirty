@@ -16,33 +16,36 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu flex bison bc
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            flex bison bc libssl-dev
 
-      - name: Get kernel headers (Android 5.10)
+      - name: Get Android Common Kernel source (5.10)
         run: |
-          # Primero, veamos qué ramas existen
-          git ls-remote --heads https://android.googlesource.com/kernel/common.git | grep android12-5.10 || true
-          # Usamos la rama principal android12-5.10 que siempre existe
+          # Clonar el kernel completo, no solo headers
           git clone --depth 1 --branch android12-5.10 \
-            https://android.googlesource.com/kernel/common.git kernel-headers
+            https://android.googlesource.com/kernel/common.git kernel-source
           
-      - name: Prepare kernel headers
+      - name: Prepare kernel for module compilation
         run: |
-          cd kernel-headers
+          cd kernel-source
+          # Configuración básica para ARM64
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          # Preparar para compilar módulos
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
       - name: Build KPM module
         run: |
-          # Crear Makefile simple
           cat > Makefile <<'EOF'
+          # Makefile para KPM
           ifneq ($(KERNELRELEASE),)
+          # Aquí es cuando se compila dentro del kernel
           obj-m := selinux_execmem_hide.o
-          ccflags-y := -I$(src)
+          ccflags-y := -D__KERNEL__ -DMODULE -DKPM_MODULE
           else
-          KDIR := $(CURDIR)/kernel-headers
+          # Compilación externa
+          KDIR := $(CURDIR)/kernel-source
           
-          default:
+          all:
           	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(CURDIR) modules
           
           clean:
@@ -52,13 +55,22 @@ jobs:
           
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 
-      - name: Check built module
+      - name: Rename to .kpm
         run: |
-          file selinux_execmem_hide.ko
-          ls -la selinux_execmem_hide.ko
+          if [ -f selinux_execmem_hide.ko ]; then
+            # KPM es básicamente un .ko renombrado
+            cp selinux_execmem_hide.ko selinux_execmem_hide.kpm
+            echo "KPM module built successfully"
+            ls -la selinux_execmem_hide.*
+          else
+            echo "ERROR: Module not built"
+            exit 1
+          fi
 
-      - name: Upload artifact
+      - name: Upload KPM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: selinux_execmem_hide.ko
-          path: selinux_execmem_hide.ko
+          name: selinux_execmem_hide
+          path: |
+            selinux_execmem_hide.kpm
+            selinux_execmem_hide.ko
