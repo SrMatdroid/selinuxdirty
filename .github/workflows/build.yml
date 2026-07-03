@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cross toolchain
+      - name: Install cross toolchain & dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu flex bison
 
       - name: Get kernel headers (5.10)
         run: |
@@ -30,13 +30,13 @@ jobs:
         run: |
           cat > Makefile <<EOF
           obj-m += selinux_execmem_hide.o
-          ccflags-y := -D__KERNEL__ -DMODULE
+          ccflags-y := -D__KERNEL__ -DMODULE -I\$(PWD)
           all:
-          	make -C kernel-headers M=\$(PWD) modules
+          	make -C kernel-headers M=\$(PWD) modules V=1
           clean:
           	make -C kernel-headers M=\$(PWD) clean
           EOF
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C kernel-headers M=$(pwd) modules
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C kernel-headers M=$(pwd) modules V=1
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
