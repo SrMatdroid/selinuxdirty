@@ -2,37 +2,44 @@ name: Build KPM
 
 on:
   push:
-    branches: [ main ]
+    paths:
+      - 'selinux_execmem_hide.c'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Native ARM64 Cross-Compiler
+      - name: Install cross toolchain
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y gcc-aarch64-linux-gnu make git python3
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
 
-      - name: Clone KernelPatch SDK
+      - name: Get kernel headers (5.10)
         run: |
-          git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next kpatch
+          git clone --depth 1 -b android12-5.10-lts \
+            https://android.googlesource.com/kernel/common.git kernel-headers
+          cd kernel-headers
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
-      - name: Build selinux-execmem-hide
+      - name: Build module
         run: |
-          mkdir -p out
-          aarch64-linux-gnu-gcc \
-            -I. -Ikpatch/kernel/include -Ikpatch/kernel/common/include -Ikpatch/kernel/patch/include -Ikpatch/kernel/linux/include -Ikpatch/kernel/linux/arch/arm64/include \
-            -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user= \
-            -c -o selinux_execmem_hide.o selinux_execmem_hide.c
-          aarch64-linux-gnu-gcc -r -o out/selinux_execmem_hide.kpm selinux_execmem_hide.o
-          rm selinux_execmem_hide.o
+          cat > Makefile <<EOF
+          obj-m += selinux_execmem_hide.o
+          ccflags-y := -D__KERNEL__ -DMODULE
+          all:
+          	make -C kernel-headers M=\$(PWD) modules
+          clean:
+          	make -C kernel-headers M=\$(PWD) clean
+          EOF
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C kernel-headers M=$(pwd) modules
 
-      - name: Upload KPMs
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kpms
-          path: out/*.kpm
-          if-no-files-found: error
+          name: selinux_execmem_hide.ko
+          path: selinux_execmem_hide.ko
