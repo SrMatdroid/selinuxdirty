@@ -13,166 +13,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install ARM GNU Toolchain 12.2.Rel1
+      - name: Setup build environment
         run: |
-          wget -q https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-          tar xf arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
-          echo "$PWD/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu/bin" >> "$GITHUB_PATH"
-
-      - name: Clone KPatch-Next
-        run: |
-          git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
-          echo "=== Headers de KPatch ==="
-          find kpatch-next -name "*.h" -type f
-
-      - name: Create KPM environment
-        run: |
-          KP_INC="$(dirname "$(find kpatch-next -iname 'kpmodule.h' | head -n1)")"
-          echo "KP_INC=$KP_INC"
-          
-          # Directorio de trabajo
-          mkdir -p kpm_build/include/linux
-          mkdir -p kpm_build/include/asm
-          
-          # Copiar headers de KPatch
-          cp "$KP_INC"/*.h kpm_build/include/ 2>/dev/null || true
-          
-          # Crear solo los headers mínimos que KPatch NO proporciona
-          cat > kpm_build/include/linux/kernel.h << 'EOF'
-          #ifndef _LINUX_KERNEL_H
-          #define _LINUX_KERNEL_H
-          
-          #define KERN_INFO ""
-          #define KERN_ERR ""
-          #define GFP_KERNEL 0xcc0
-          
-          #define pr_info(fmt, ...) 
-          #define pr_err(fmt, ...) 
-          #define printk(fmt, ...) 
-          
-          #endif
-          EOF
-          
-          cat > kpm_build/include/linux/string.h << 'EOF'
-          #ifndef _LINUX_STRING_H
-          #define _LINUX_STRING_H
-          
-          static inline int strlen(const char *s)
-          {
-              int n = 0;
-              while (*s && *s != '\0') {
-                  n++;
-                  s++;
-              }
-              return n;
-          }
-          
-          #endif
-          EOF
-          
-          cat > kpm_build/include/linux/kallsyms.h << 'EOF'
-          #ifndef _LINUX_KALLSYMS_H
-          #define _LINUX_KALLSYMS_H
-          
-          static inline void *kallsyms_lookup_name(const char *name)
-          {
-              return 0;
-          }
-          
-          #endif
-          EOF
-          
-          cat > kpm_build/include/linux/sched.h << 'EOF'
-          #ifndef _LINUX_SCHED_H
-          #define _LINUX_SCHED_H
-          
-          struct task_struct;
-          
-          #endif
-          EOF
-          
-          cat > kpm_build/include/linux/cred.h << 'EOF'
-          #ifndef _LINUX_CRED_H
-          #define _LINUX_CRED_H
-          
-          typedef unsigned int uid_t;
-          
-          struct cred {
-              uid_t uid;
-          };
-          
-          #endif
-          EOF
-          
-          cat > kpm_build/include/asm/current.h << 'EOF'
-          #ifndef _ASM_CURRENT_H
-          #define _ASM_CURRENT_H
-          
-          struct task_struct;
-          
-          static inline struct task_struct *get_current(void)
-          {
-              struct task_struct *cur;
-              asm volatile("mrs %0, sp_el0" : "=r"(cur));
-              return cur;
-          }
-          
-          #define current get_current()
-          
-          #endif
-          EOF
-          
-          # kputils.h que usa los tipos de KPatch
-          cat > kpm_build/include/kputils.h << 'EOF'
-          #ifndef __KPUTILS_H__
-          #define __KPUTILS_H__
-          
-          #include <linux/cred.h>
-          #include <asm/current.h>
-          
-          static inline uid_t current_uid(void)
-          {
-              return current->cred->uid;
-          }
-          
-          #endif
-          EOF
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Download kptools
         run: |
           curl -sL $(curl -s https://api.github.com/repos/KernelSU-Next/KPatch-Next/releases/latest \
             | grep browser_download_url | grep 'kptools-linux' | cut -d '"' -f4 | head -n1) -o kptools
           chmod +x kptools
-          ./kptools --help || true
 
-      - name: Compile KPM object
+      - name: Clone KPatch-Next headers
         run: |
-          aarch64-none-linux-gnu-gcc \
-            -c selinux_execmem_hide.c \
-            -o selinux_execmem_hide.o \
-            -I kpm_build/include \
-            -nostdinc \
-            -D__KERNEL__ \
-            -DMODULE \
-            -fno-stack-protector \
-            -fno-pic \
-            -Wall \
-            -O2 \
-            -ffreestanding
+          git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
+          KPM_INC=$(dirname "$(find kpatch-next -name 'kpmodule.h' | head -n1)")
+          echo "KPM_INC=$KPM_INC" >> $GITHUB_ENV
 
-      - name: Package as .kpm
+      - name: Build KPM
         run: |
-          if [ -f kptools ]; then
-            ./kptools pack -o selinux_execmem_hide.kpm selinux_execmem_hide.o 2>/dev/null || \
-            cp selinux_execmem_hide.o selinux_execmem_hide.kpm
+          # Compilar con kpcc de kptools si existe, o directamente con gcc
+          if ./kptools cc --help 2>/dev/null; then
+            ./kptools cc -i $KPM_INC -o selinux_execmem_hide.kpm selinux_execmem_hide.c
           else
-            cp selinux_execmem_hide.o selinux_execmem_hide.kpm
+            # Método directo con gcc para kernel module
+            aarch64-linux-gnu-gcc \
+              -I$KPM_INC \
+              -D__KERNEL__ \
+              -DMODULE \
+              -fno-pic \
+              -fno-stack-protector \
+              -O2 \
+              -c selinux_execmem_hide.c \
+              -o selinux_execmem_hide.o
+            
+            # Empaquetar como .kpm
+            if ./kptools pack --help 2>/dev/null; then
+              ./kptools pack -o selinux_execmem_hide.kpm selinux_execmem_hide.o
+            else
+              cp selinux_execmem_hide.o selinux_execmem_hide.kpm
+            fi
           fi
-          
-          ls -la selinux_execmem_hide.*
 
-      - name: Upload KPM artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: selinux_execmem_hide
+          name: selinux_execmem_hide.kpm
           path: selinux_execmem_hide.kpm
