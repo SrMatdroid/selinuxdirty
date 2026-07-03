@@ -1,64 +1,57 @@
-name: Build KPM
+name: Build KPMs
 
 on:
   push:
-    paths:
-      - 'selinux_execmem_hide.c'
-      - '.github/workflows/build.yml'
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get update -y
+          sudo apt-get install -y make git curl tar
 
-      - name: Clone KPatch-Next headers
+      - name: Download ARM GNU Toolchain 12.2.Rel1
         run: |
-          git clone --depth 1 https://github.com/KernelSU-Next/KPatch-Next.git kpatch-next
-          KPM_INC=$(dirname "$(find kpatch-next -name 'kpmodule.h' -type f | head -n1)")
-          echo "KPM_INC=$KPM_INC" >> $GITHUB_ENV
-          
-          # Crear header con definiciones mínimas
-          cat > "$KPM_INC/kpm_compat.h" << 'EOF'
-          #ifndef __KPM_COMPAT_H__
-          #define __KPM_COMPAT_H__
-          
-          #define __user
-          #define pr_info(fmt, ...)
-          #define pr_err(fmt, ...)
-          #define printk(fmt, ...)
-          
-          extern unsigned long kallsyms_lookup_name(const char *name);
-          extern unsigned int current_uid(void);
-          
-          #endif
-          EOF
+          mkdir -p toolchain
+          curl -L "https://developer.arm.com/-/media/Files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-elf.tar.xz" \
+            -o toolchain.tar.xz
+          tar -xf toolchain.tar.xz -C toolchain --strip-components=1
 
-      - name: Compile KPM
+      - name: Clone KernelPatch
         run: |
-          aarch64-linux-gnu-gcc \
-            -I"$KPM_INC" \
-            -D__KERNEL__ \
-            -DMODULE \
-            -fno-pic \
+          git clone --depth=1 https://github.com/bmax121/KernelPatch.git kpatch
+
+      - name: Build duck-detector-hide
+        run: |
+          export PATH="$PWD/toolchain/bin:$PATH"
+          mkdir -p out
+          aarch64-none-elf-gcc \
+            -I kpatch/kernel/include \
+            -I kpatch/kernel/patch/include \
+            -D__user= \
+            -nostdlib \
+            -fno-builtin \
+            -ffreestanding \
             -fno-stack-protector \
-            -O2 \
+            -fpic \
             -Wall \
             -Wno-implicit-function-declaration \
-            -c selinux_execmem_hide.c \
-            -o selinux_execmem_hide.o
-          
-          cp selinux_execmem_hide.o selinux_execmem_hide.kpm
-          ls -la *.kpm *.o
+            -o out/duck_detector_hide.kpm \
+            src/duck_detector_hide.c
 
-      - name: Upload artifact
+      - name: Upload KPMs
         uses: actions/upload-artifact@v4
         with:
-          name: selinux_execmem_hide.kpm
-          path: selinux_execmem_hide.kpm
+          name: kpms
+          path: out/*.kpm
+          if-no-files-found: error
