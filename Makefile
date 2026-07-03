@@ -1,7 +1,7 @@
 KPATCH_DIR := kpatch
 CC := aarch64-linux-gnu-gcc
-CFLAGS := -O2 -fno-stack-protector -ffreestanding -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user=
-INC := -I. -I$(KPATCH_DIR)/kernel/include -I$(KPATCH_DIR)/kernel/common/include -I$(KPATCH_DIR)/kernel/patch/include -I$(KPATCH_DIR)/kernel/linux/include -I$(KPATCH_DIR)/kernel/linux/arch/arm64/include
+CFLAGS := -O2 -fno-asynchronous-unwind-tables -fno-unwind-tables -D__user=
+INC := -I$(KPATCH_DIR)/kernel -I$(KPATCH_DIR)/kernel/include -I$(KPATCH_DIR)/kernel/patch/include -I$(KPATCH_DIR)/kernel/linux/include -I$(KPATCH_DIR)/kernel/linux/arch/arm64/include -I$(KPATCH_DIR)/kernel/linux/tools/arch/arm64/include
 OUT := out
 
 SRCS := selinux_execmem_hide.c
