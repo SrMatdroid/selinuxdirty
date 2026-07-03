@@ -13,30 +13,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install cross toolchain & dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu flex bison
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu flex bison bc
 
-      - name: Get kernel headers (5.10)
+      - name: Get kernel headers (5.10.198 - Android GKI)
         run: |
-          git clone --depth 1 -b android12-5.10-lts \
+          git clone --depth 1 -b android12-5.10-2023-09 \
             https://android.googlesource.com/kernel/common.git kernel-headers
           cd kernel-headers
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          # Usar configuración GKI para Android
+          ARCH=arm64 scripts/kconfig/merge_config.sh arch/arm64/configs/gki_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules_prepare
 
       - name: Build module
         run: |
-          cat > Makefile <<EOF
-          obj-m += selinux_execmem_hide.o
-          ccflags-y := -D__KERNEL__ -DMODULE -I\$(PWD)
+          cat > Makefile <<'EOF'
+          # Asegurar que se exportan los símbolos necesarios
+          export KCFLAGS := -D__KERNEL__ -DMODULE -DEXPORT_SYMTAB
+          
+          ifneq ($(KERNELRELEASE),)
+          obj-m := selinux_execmem_hide.o
+          
+          # Dependencias para hooks
+          selinux_execmem_hide-y := selinux_execmem_hide.o
+          
+          else
+          KDIR := $(CURDIR)/kernel-headers
+          PWD := $(CURDIR)
+          
           all:
-          	make -C kernel-headers M=\$(PWD) modules V=1
+          	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(PWD) modules
+          
           clean:
-          	make -C kernel-headers M=\$(PWD) clean
+          	$(MAKE) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C $(KDIR) M=$(PWD) clean
+          endif
           EOF
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -C kernel-headers M=$(pwd) modules V=1
+          
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
