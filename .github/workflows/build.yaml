@@ -36,8 +36,10 @@ jobs:
           export PATH="$PWD/toolchain/bin:$PATH"
           mkdir -p out
           aarch64-none-elf-gcc \
+            -I kpatch/kernel \
             -I kpatch/kernel/include \
             -I kpatch/kernel/patch/include \
+            -I kpatch/kernel/patch \
             -D__user= \
             -nostdlib \
             -fno-builtin \
