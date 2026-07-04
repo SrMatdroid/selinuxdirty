@@ -1,113 +1,88 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include <compiler.h>
-#include <hook.h>
-#include <kpmodule.h>
-#include <kputils.h>
-#include <kallsyms.h>
-#include <linux/printk.h>
+// KPM: selinux-context-hide v1.0.0
+// Oculta context strings de KernelSU/Magisk al sondear /proc/self/attr/current
 
-KPM_NAME("selinux-context-hide");
-KPM_VERSION("1.0.0");
-KPM_LICENSE("GPL v2");
-KPM_DESCRIPTION("Hide KSU/Magisk SELinux context probing");
-KPM_AUTHOR("SrMatdroid");
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/string.h>
+#include <linux/kallsyms.h>
+#include <linux/cred.h>
+#include "hook.h"
 
-#define KPM_EINVAL 22
+#define KPM_NAME(name)          static const char kpm_name[] = name
+#define KPM_VERSION(ver)        static const char kpm_version[] = ver
+#define KPM_LICENSE(lic)        MODULE_LICENSE(lic)
+#define KPM_AUTHOR(auth)        MODULE_AUTHOR(auth)
+#define KPM_DESCRIPTION(desc)   MODULE_DESCRIPTION(desc)
+
+#define KPM_INIT(f)             static int __init _kpm_init(void) { return f(NULL, NULL, NULL); } module_init(_kpm_init)
+#define KPM_EXIT(f)             static void __exit _kpm_exit(void) { f(NULL); } module_exit(_kpm_exit)
+
+#define ctx_info(fmt, ...) printk(KERN_INFO "[ctx-hide] " fmt, ##__VA_ARGS__)
+#define ctx_err(fmt, ...)  printk(KERN_ERR  "[ctx-hide][E] " fmt, ##__VA_ARGS__)
 
 static void *g_setprocattr_addr = NULL;
 
-static int my_strlen(const char *s)
+static int contains_suspect(const char *buf)
 {
-    int n = 0;
-    while (*s++) n++;
-    return n;
-}
-
-static int my_memcmp(const void *a, const void *b, unsigned long n)
-{
-    const unsigned char *p = a, *q = b;
-    while (n--) {
-        if (*p != *q) return *p - *q;
-        p++; q++;
-    }
-    return 0;
-}
-
-static int my_strstr(const char *haystack, const char *needle)
-{
-    if (!needle[0]) return 1;
-    for (int i = 0; haystack[i]; i++) {
-        int j;
-        for (j = 0; needle[j] && haystack[i + j] == needle[j]; j++);
-        if (!needle[j]) return 1;
-    }
-    return 0;
-}
-
-static int contains_suspect(const char *buf, int len)
-{
-    if (my_strstr(buf, "magisk")) return 1;
-    if (my_strstr(buf, "kernelsu")) return 1;
-    if (my_strstr(buf, "u:r:su:s0")) return 1;
-    if (my_strstr(buf, "u:r:ksu:s0")) return 1;
-    (void)len;
+    if (strstr(buf, "magisk")) return 1;
+    if (strstr(buf, "kernelsu")) return 1;
+    if (strstr(buf, "u:r:su:s0")) return 1;
+    if (strstr(buf, "u:r:ksu:s0")) return 1;
     return 0;
 }
 
 static void before_setprocattr(hook_fargs4_t *args, void *udata)
 {
-    (void)udata;
-    const char *name = (const char *)args->arg2;
-    if (!name) return;
-    if (my_memcmp(name, "current", 8) != 0) return;
+    const char *name = (const char *)args->arg1;
+    if (!name || strcmp(name, "current") != 0)
+        return;
 
-    uid_t uid = (uid_t)current_uid();
-    if (uid < 10000) return;
-
-    const char *value = (const char *)args->arg3;
-    if (!value) return;
+    const char *value = (const char *)args->arg2;
+    size_t size = (size_t)args->arg3;
+    if (!value || size == 0 || size >= 128)
+        return;
 
     char local[128];
-    int i;
-    for (i = 0; i < 127 && value[i]; i++)
-        local[i] = value[i];
-    local[i] = '\0';
+    memcpy(local, value, size);
+    local[size] = '\0';
 
-    if (contains_suspect(local, i)) {
-        args->ret = -KPM_EINVAL;
+    if (contains_suspect(local)) {
+        args->ret = -22;
         args->skip_origin = 1;
     }
+    (void)udata;
 }
 
-static long context_hide_init(const char *args, const char *event, void *reserved)
+static long kpm_init(const char *args, const char *event, void *reserved)
 {
+    hook_err_t err;
     (void)args; (void)event; (void)reserved;
 
     g_setprocattr_addr = (void *)kallsyms_lookup_name("security_setprocattr");
     if (!g_setprocattr_addr) {
-        pr_err("[context-hide] symbol not found\n");
-        return -KPM_EINVAL;
+        ctx_err("security_setprocattr not found\n");
+        return -1;
     }
 
-    hook_err_t err = hook_wrap4(g_setprocattr_addr,
-                                 before_setprocattr, NULL, NULL);
+    err = hook_wrap(g_setprocattr_addr, 4,
+                    (void *)before_setprocattr, NULL, NULL);
     if (err != HOOK_NO_ERR) {
-        pr_err("[context-hide] hook_wrap4 failed: %d\n", err);
-        return -KPM_EINVAL;
+        ctx_err("hook_wrap failed: %d\n", err);
+        return -1;
     }
 
-    pr_info("[context-hide] loaded\n");
+    ctx_info("cargado\n");
     return 0;
 }
 
-static long context_hide_exit(void *reserved)
+static long kpm_exit(void *reserved)
 {
     (void)reserved;
-    if (g_setprocattr_addr)
-        hook_unwrap(g_setprocattr_addr, before_setprocattr, NULL);
-    pr_info("[context-hide] unloaded\n");
+    if (g_setprocattr_addr) unhook_func(g_setprocattr_addr);
+    ctx_info("descargado\n");
     return 0;
 }
 
-KPM_INIT(context_hide_init);
-KPM_EXIT(context_hide_exit);
+KPM_INIT(kpm_init);
+KPM_EXIT(kpm_exit);

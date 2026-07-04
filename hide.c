@@ -1,27 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-only
-#include <compiler.h>
-#include <kpmodule.h>
-#include <hook.h>
-#include <kputils.h>
-#include <kallsyms.h>
-#include <linux/printk.h>
+// KPM: hide v1.0.0
+// Oculta reglas execmem SELinux de detecciones
 
-#define EACCES 13
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/string.h>
+#include <linux/kallsyms.h>
+#include "hook.h"
 
-static int kstrcmp(const char *a, const char *b)
-{
-    while (*a && *a == *b) { a++; b++; }
-    return *a - *b;
-}
+#define KPM_NAME(name)          static const char kpm_name[] = name
+#define KPM_VERSION(ver)        static const char kpm_version[] = ver
+#define KPM_LICENSE(lic)        MODULE_LICENSE(lic)
+#define KPM_AUTHOR(auth)        MODULE_AUTHOR(auth)
+#define KPM_DESCRIPTION(desc)   MODULE_DESCRIPTION(desc)
+
+#define KPM_INIT(f)             static int __init _kpm_init(void) { return f(NULL, NULL, NULL); } module_init(_kpm_init)
+#define KPM_EXIT(f)             static void __exit _kpm_exit(void) { f(NULL); } module_exit(_kpm_exit)
+
+#define hide_info(fmt, ...) printk(KERN_INFO "[hide] " fmt, ##__VA_ARGS__)
 
 #define SECCLASS_PROCESS  2
 #define PROCESS__EXECMEM  0x00000002
 
-KPM_NAME("hide");
-KPM_VERSION("1.0.0");
-KPM_LICENSE("GPL v2");
-KPM_AUTHOR("SrMatdroid");
-KPM_DESCRIPTION("Hide execmem SELinux rules from detection");
+static void *g_avc_denied = NULL;
+static void *g_avc_has_perm = NULL;
+static void *g_security_getprocattr = NULL;
 
 static void before_avc_denied(hook_fargs5_t *args, void *udata)
 {
@@ -39,8 +42,14 @@ static void before_avc_has_perm(hook_fargs5_t *args, void *udata)
     (void)udata;
     if (tclass == SECCLASS_PROCESS && (requested & PROCESS__EXECMEM)) {
         args->skip_origin = 1;
-        args->ret = -EACCES;
+        args->ret = -13;
     }
+}
+
+static int kstrcmp(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a - *b;
 }
 
 static void before_getprocattr(hook_fargs3_t *args, void *udata)
@@ -48,70 +57,55 @@ static void before_getprocattr(hook_fargs3_t *args, void *udata)
     const char *name = (const char *)(unsigned long)args->arg1;
     (void)udata;
     if (name && kstrcmp(name, "current") == 0) {
-        if (current_uid() == 0) {
-            char **value_ptr = (char **)(unsigned long)args->arg2;
-            *value_ptr = "u:r:untrusted_app:s0:c512,c768";
-            args->skip_origin = 1;
-            args->ret = 32;
-        }
+        char **value_ptr = (char **)(unsigned long)args->arg2;
+        *value_ptr = "u:r:untrusted_app:s0:c512,c768";
+        args->skip_origin = 1;
+        args->ret = 32;
     }
 }
 
-static long hide_init(const char *args, const char *event, void *reserved)
+static long kpm_init(const char *args, const char *event, void *reserved)
 {
-    void *sym;
     hook_err_t err;
     (void)args; (void)event; (void)reserved;
 
-    pr_info("hide: init, event: %s, args: %s\n", event, args);
-
-    sym = (void *)kallsyms_lookup_name("avc_denied");
-    if (sym) {
-        err = hook_wrap(sym, 5, (void *)before_avc_denied, NULL, NULL);
-        pr_info("hide: avc_denied hook: %d\n", err);
+    g_avc_denied = (void *)kallsyms_lookup_name("avc_denied");
+    if (g_avc_denied) {
+        err = hook_wrap(g_avc_denied, 5, (void *)before_avc_denied, NULL, NULL);
+        hide_info("avc_denied hook: %d\n", err);
     } else {
-        pr_info("hide: avc_denied not found\n");
+        hide_info("avc_denied not found\n");
     }
 
-    sym = (void *)kallsyms_lookup_name("avc_has_perm");
-    if (sym) {
-        err = hook_wrap(sym, 5, (void *)before_avc_has_perm, NULL, NULL);
-        pr_info("hide: avc_has_perm hook: %d\n", err);
+    g_avc_has_perm = (void *)kallsyms_lookup_name("avc_has_perm");
+    if (g_avc_has_perm) {
+        err = hook_wrap(g_avc_has_perm, 5, (void *)before_avc_has_perm, NULL, NULL);
+        hide_info("avc_has_perm hook: %d\n", err);
     } else {
-        pr_info("hide: avc_has_perm not found\n");
+        hide_info("avc_has_perm not found\n");
     }
 
-    sym = (void *)kallsyms_lookup_name("security_getprocattr");
-    if (sym) {
-        err = hook_wrap(sym, 3, (void *)before_getprocattr, NULL, NULL);
-        pr_info("hide: security_getprocattr hook: %d\n", err);
+    g_security_getprocattr = (void *)kallsyms_lookup_name("security_getprocattr");
+    if (g_security_getprocattr) {
+        err = hook_wrap(g_security_getprocattr, 3, (void *)before_getprocattr, NULL, NULL);
+        hide_info("security_getprocattr hook: %d\n", err);
     } else {
-        pr_info("hide: security_getprocattr not found\n");
+        hide_info("security_getprocattr not found\n");
     }
 
+    hide_info("cargado\n");
     return 0;
 }
 
-static long hide_exit(void *reserved)
+static long kpm_exit(void *reserved)
 {
-    void *sym;
     (void)reserved;
-
-    sym = (void *)kallsyms_lookup_name("avc_denied");
-    if (sym)
-        hook_unwrap(sym, (void *)before_avc_denied, NULL);
-
-    sym = (void *)kallsyms_lookup_name("avc_has_perm");
-    if (sym)
-        hook_unwrap(sym, (void *)before_avc_has_perm, NULL);
-
-    sym = (void *)kallsyms_lookup_name("security_getprocattr");
-    if (sym)
-        hook_unwrap(sym, (void *)before_getprocattr, NULL);
-
-    pr_info("hide: exit\n");
+    if (g_avc_denied) unhook_func(g_avc_denied);
+    if (g_avc_has_perm) unhook_func(g_avc_has_perm);
+    if (g_security_getprocattr) unhook_func(g_security_getprocattr);
+    hide_info("descargado\n");
     return 0;
 }
 
-KPM_INIT(hide_init);
-KPM_EXIT(hide_exit);
+KPM_INIT(kpm_init);
+KPM_EXIT(kpm_exit);
