@@ -32,10 +32,11 @@ jobs:
             INCLUDE_FLAGS="$INCLUDE_FLAGS -I$KP_DIR/kernel/$dir"
           done
 
-          $CC $INCLUDE_FLAGS -D__user= -fno-asynchronous-unwind-tables -fno-unwind-tables -c -O2 -o hide.o hide.c
+          $CC $INCLUDE_FLAGS -Thide.lds -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -c -O2 -o hide.o hide.c
           $CC -r -o hide.kpm hide.o
           ls -la hide.kpm
           file hide.kpm
+          aarch64-linux-gnu-readelf -S hide.kpm 2>/dev/null || readelf -S hide.kpm 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
