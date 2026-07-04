@@ -21,7 +21,7 @@ jobs:
         run: |
           git clone https://github.com/KernelSU-Next/KPatch-Next kpatch
 
-      - name: Build KPM
+      - name: Build KPMs
         run: |
           KP_DIR=kpatch
           CC=aarch64-linux-gnu-gcc
@@ -32,14 +32,40 @@ jobs:
             INCLUDE_FLAGS="$INCLUDE_FLAGS -I$KP_DIR/kernel/$dir"
           done
 
-          $CC $INCLUDE_FLAGS -Thide.lds -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -c -O2 -o hide.o hide.c
+          CFLAGS="$INCLUDE_FLAGS -Thide.lds -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables -c -O2"
+
+          echo "=== Building hide.kpm ==="
+          $CC $CFLAGS -o hide.o hide.c
           $CC -r -o hide.kpm hide.o
           ls -la hide.kpm
           file hide.kpm
-          aarch64-linux-gnu-readelf -S hide.kpm 2>/dev/null || readelf -S hide.kpm 2>/dev/null || true
 
-      - name: Upload artifact
+          echo "=== Building selinux_context_hide.kpm ==="
+          $CC $CFLAGS -o selinux_context_hide.o selinux_context_hide.c
+          $CC -r -o selinux_context_hide.kpm selinux_context_hide.o
+          ls -la selinux_context_hide.kpm
+          file selinux_context_hide.kpm
+
+          echo "=== Building selinux_execmem_hide.kpm ==="
+          $CC $CFLAGS -o selinux_execmem_hide.o selinux_execmem_hide.c
+          $CC -r -o selinux_execmem_hide.kpm selinux_execmem_hide.o
+          ls -la selinux_execmem_hide.kpm
+          file selinux_execmem_hide.kpm
+
+      - name: Upload hide.kpm
         uses: actions/upload-artifact@v4
         with:
           name: hide
           path: hide.kpm
+
+      - name: Upload selinux_context_hide.kpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: selinux_context_hide
+          path: selinux_context_hide.kpm
+
+      - name: Upload selinux_execmem_hide.kpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: selinux_execmem_hide
+          path: selinux_execmem_hide.kpm
